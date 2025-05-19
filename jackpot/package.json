@@ -1,0 +1,27 @@
+{
+  "name": "galileo-jackpot",
+  "version": "1.0.0",
+  "description": "Jackpot lottery system for Galileo testnet",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:history": "hardhat run scripts/deploy-history.js --network galileo",
+    "deploy:jackpot": "hardhat run scripts/deploy-jackpot.js --network galileo",
+    "deploy:all": "hardhat run scripts/setup-contracts.js --network galileo",
+    "verify": "hardhat verify"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.4",
+    "@openzeppelin/contracts": "^5.0.1",
+    "dotenv": "^16.3.1",
+    "hardhat": "^2.19.4"
+  },
+  "dependencies": {
+    "ethers": "^6.9.0"
+  }
+} 
