@@ -139,7 +139,7 @@ const Notification = ({ type, message, txHash, onClose, duration = 5000 }) => {
         
         {txHash && (
           <a 
-            href={`${explorerUrl}/tx/${txHash}`} 
+            href={`${explorerUrl}tx/${txHash}`} 
             target="_blank" 
             rel="noopener noreferrer"
             style={{

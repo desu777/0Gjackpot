@@ -110,7 +110,7 @@ const InfoPanel = ({ mockData, mockTickets, isRefreshing, ticketOwners, shortenA
         </div>
       </div>
       
-      {/* Add keyframe animation for the spinner */}
+      {/* Add keyframe animation for the spinner and refresh effects */}
       <style>
         {`
           @keyframes spin {
@@ -122,6 +122,12 @@ const InfoPanel = ({ mockData, mockTickets, isRefreshing, ticketOwners, shortenA
             0% { opacity: 0.4; }
             50% { opacity: 1; }
             100% { opacity: 0.4; }
+          }
+          
+          @keyframes refreshPulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
           }
         `}
       </style>
@@ -137,8 +143,23 @@ const InfoPanel = ({ mockData, mockTickets, isRefreshing, ticketOwners, shortenA
           borderRadius: '12px',
           padding: '16px',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          position: 'relative',
+          overflow: 'hidden'
         }}>
+          {/* Pool refresh indicator */}
+          {isRefreshing && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '2px',
+              background: `linear-gradient(90deg, ${theme.accent.primary}, ${theme.accent.secondary})`,
+              animation: 'refreshPulse 1s infinite'
+            }} />
+          )}
+          
           <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '14px', marginBottom: '8px' }}>
             Current Pool
           </div>
@@ -147,9 +168,13 @@ const InfoPanel = ({ mockData, mockTickets, isRefreshing, ticketOwners, shortenA
             fontWeight: 'bold',
             background: `linear-gradient(90deg, ${theme.accent.primary}, ${theme.accent.secondary})`,
             WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
+            WebkitTextFillColor: 'transparent',
+            transition: 'all 0.3s ease' // Smooth transition for changing values
           }}>
             {mockData.totalPool} 0G
+          </div>
+          <div style={{ fontSize: '10px', color: theme.text.secondary, marginTop: '4px' }}>
+            Last update: {new Date().toLocaleTimeString()}
           </div>
         </div>
         

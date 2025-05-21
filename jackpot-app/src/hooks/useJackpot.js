@@ -90,26 +90,61 @@ export const useJackpot = () => {
     enabled: isConnected && isCorrectChain && !!jackpotAddress,
   });
   
-  // Function to refresh all data
+  // Refresh count for diagnostic purposes
+  const [refreshCount, setRefreshCount] = useState(0);
+
+  // Function to refresh all data with optimization
   const refreshAllData = async () => {
     console.log('Refreshing all contract data');
     setIsRefreshing(true);
+    setRefreshCount(prev => prev + 1);
     
     try {
+      // Prioritize fetching pool data first
+      const currentRoundInfoPromise = refetchRoundInfo();
+      
+      // Then fetch the rest of the data in parallel
       await Promise.all([
+        currentRoundInfoPromise,
         refetchRoundId(),
         refetchRoundData(),
-        refetchRoundInfo(),
         refetchUserTickets(),
         refetchRoundTickets()
       ]);
+      
+      console.log(`Refresh #${refreshCount + 1} completed at ${new Date().toISOString()}`);
     } catch (err) {
       console.error('Error refreshing data:', err);
     } finally {
       setIsRefreshing(false);
     }
   };
-  
+
+  // Function to refresh only pool data (faster update)
+  const refreshPoolData = async () => {
+    if (!isConnected || !isCorrectChain || !jackpotAddress) return;
+    
+    try {
+      const result = await readContract({
+        address: jackpotAddress,
+        abi: JACKPOT_ABI,
+        functionName: 'getCurrentRoundInfo',
+      });
+      
+      if (result && result.length > 3) {
+        // Update only pool data
+        setCurrentRound(prev => prev ? ({
+          ...prev,
+          totalPool: result[3].toString()
+        }) : null);
+        
+        console.log(`Pool value updated: ${result[3].toString()}`);
+      }
+    } catch (err) {
+      console.error('Error refreshing pool data:', err);
+    }
+  };
+
   // Write contract functions
   const { writeContract, isPending: isTransactionPending, data: txHash } = useWriteContract();
 
@@ -147,14 +182,31 @@ export const useJackpot = () => {
     }
   }, [isTxSuccess, pendingTx]);
 
-  // Schedule periodic data refreshes during active rounds
+  // Schedule optimized periodic data refreshes
   useEffect(() => {
     let refreshInterval;
+    let cycleCount = 0;
     
-    // Refresh data every second regardless of round status
-    refreshInterval = setInterval(() => {
-      refreshAllData();
-    }, 1000); // Refresh every 1 second
+    // Function to perform a smart refresh
+    const doSmartRefresh = () => {
+      if (isRefreshing) return; // Prevent parallel refreshes
+      
+      cycleCount++;
+      
+      // Do a full refresh every 5 cycles and on first run
+      if (cycleCount === 1 || cycleCount % 5 === 0) {
+        refreshAllData();
+      } else {
+        // Otherwise just refresh the pool data (faster)
+        refreshPoolData();
+      }
+    };
+    
+    // Refresh immediately on component mount
+    doSmartRefresh();
+    
+    // Set interval for continuous refreshing
+    refreshInterval = setInterval(doSmartRefresh, 1000); // Refresh every 1 second
     
     return () => {
       if (refreshInterval) clearInterval(refreshInterval);
@@ -458,11 +510,12 @@ export const useJackpot = () => {
     currentRound,
     timeLeft,
     isDrawing,
-    currentTicket, 
+    currentTicket,
     winner,
     error,
     loading,
     isRefreshing,
+    refreshCount,
     
     // Data from contracts converted to appropriate format
     roundId: roundId ? Number(roundId) : 0,
@@ -494,8 +547,9 @@ export const useJackpot = () => {
     minPayment: MIN_PAYMENT,
     lockPeriod: LOCK_PERIOD,
     
-    // Add refreshAllData to expose it to components
+    // Add refresh functions to expose to components
     refreshAllData,
+    refreshPoolData,
     
     // Add ticket owners data
     ticketOwners,

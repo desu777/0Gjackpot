@@ -46,7 +46,9 @@ const JackpotPage = () => {
     minPayment,
     lockPeriod,
     refreshAllData,
+    refreshPoolData,
     isRefreshing,
+    refreshCount,
     ticketOwners,
     shortenAddress
   } = useJackpot();
@@ -197,6 +199,8 @@ const JackpotPage = () => {
             timeLeft={timeLeft}
             lockPeriod={lockPeriod}
             isRefreshing={isRefreshing}
+            refreshCount={refreshCount}
+            refreshPoolData={refreshPoolData}
             ticketOwners={ticketOwners}
             shortenAddress={shortenAddress}
           />
