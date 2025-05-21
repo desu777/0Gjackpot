@@ -26,6 +26,7 @@ export const useJackpot = () => {
   const [notifications, setNotifications] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [ticketOwners, setTicketOwners] = useState({});
+  const [isCompletingRound, setIsCompletingRound] = useState(false);
 
   // Constants
   const MIN_PAYMENT = 0.02; // Minimum payment to start the countdown
@@ -382,17 +383,30 @@ export const useJackpot = () => {
     }
   }, [userTicketIds, roundTicketIds]);
   
-  // Timer effect - modified to auto-trigger completeRound when timer reaches zero
+  // Countdown timer effect
   useEffect(() => {
     let interval;
     if (timeLeft > 0 && currentRound && !currentRound.completed) {
+      // Zapisujemy czas początkowy i początkową wartość timeLeft
+      const startTime = Date.now();
+      const initialTimeLeft = timeLeft;
+      
       interval = setInterval(() => {
-        const newTimeLeft = Math.max(0, timeLeft - 1);
-        setTimeLeft(newTimeLeft);
+        // Obliczamy, ile czasu upłynęło
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        // Obliczamy nowy czas pozostały
+        const newTimeLeft = Math.max(0, Math.floor(initialTimeLeft - elapsedSeconds));
         
-        // When timer reaches zero, automatically trigger completeRound with admin wallet
-        if (newTimeLeft === 0 && currentRound && !currentRound.completed) {
+        // Aktualizujemy tylko jeśli się zmienił
+        if (newTimeLeft !== timeLeft) {
+          setTimeLeft(newTimeLeft);
+        }
+        
+        // Dodany warunek !isCompletingRound, aby zapobiec wielokrotnemu wywołaniu
+        if (newTimeLeft === 0 && currentRound && !currentRound.completed && !isCompletingRound) {
           console.log('Countdown reached zero - automatically completing round with admin wallet');
+          setIsCompletingRound(true); // Oznaczamy, że proces kończenia rundy jest w toku
+          
           addNotification({
             type: 'info',
             message: 'Countdown ended! Drawing winner automatically...'
@@ -418,13 +432,23 @@ export const useJackpot = () => {
                   message: `Failed to complete round: ${result.error}`
                 });
               }
+              // Reset flagi bez względu na wynik
+              setIsCompletingRound(false);
+            })
+            .catch(err => {
+              console.error('Error completing round:', err);
+              addNotification({
+                type: 'error',
+                message: `Error completing round: ${err.message || 'Unknown error'}`
+              });
+              setIsCompletingRound(false);
             });
         }
-      }, 1000);
+      }, 100); // Częstsze odświeżanie dla płynniejszego wyglądu
     }
     
     return () => clearInterval(interval);
-  }, [timeLeft, currentRound, completeRoundWithAdmin]);
+  }, [timeLeft, currentRound, completeRoundWithAdmin, isCompletingRound]); // Dodajemy isCompletingRound do zależności
   
   // Format time display
   const formatTime = (seconds) => {

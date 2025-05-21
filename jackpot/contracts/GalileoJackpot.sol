@@ -41,8 +41,8 @@ contract GalileoJackpot is Ownable, ReentrancyGuard {
     // Minimum deposit
     uint256 public constant MIN_DEPOSIT = 0.01 ether;
     
-    // Round duration (5 minutes)
-    uint256 public constant ROUND_DURATION = 5 minutes;
+    // Round duration (2 minutes)
+    uint256 public constant ROUND_DURATION = 2 minutes;
     
     // Owner fee percentage (5%)
     uint256 public constant OWNER_FEE_PERCENT = 5;

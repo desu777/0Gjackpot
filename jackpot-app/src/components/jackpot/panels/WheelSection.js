@@ -309,13 +309,10 @@ const WheelSection = ({
               </div>
               <button 
                 onClick={() => {
-                  // Najpierw wywołujemy funkcję completeRound
-                  completeRound();
-                  // Po wywołaniu funkcji completeRound, możemy pokazać animację
-                  // Animacja zostanie uruchomiona z opóźnieniem, aby dać czas na zakończenie transakcji
-                  setTimeout(() => {
+                  // Usuwamy wywołanie completeRound i używamy tylko startDrawing
+                  if (timeLeft === 0) {
                     startDrawing();
-                  }, 2000);
+                  }
                 }}
                 style={{
                   background: `linear-gradient(90deg, ${theme.accent.primary}, ${theme.accent.secondary})`,
@@ -342,7 +339,7 @@ const WheelSection = ({
                   e.target.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.2)';
                 }}
               >
-                {timeLeft > 0 ? "Wait..." : "Start Drawing"}
+                {timeLeft > 0 ? "Wait..." : "Show Animation"}
               </button>
             </div>
           )}
