@@ -6,6 +6,14 @@ import { JACKPOT_ABI } from '../config/contractConfig';
 import { readContract } from 'wagmi/actions';
 import { useAdminWallet } from './useAdminWallet';
 
+// Debugging helper
+const DEBUG = true; // Set to false in production
+const debugLog = (...args) => {
+  if (DEBUG) {
+    console.log('🔄 [JACKPOT DEBUG]', ...args);
+  }
+};
+
 /**
  * Hook for interacting with the Jackpot contract
  */
@@ -383,6 +391,16 @@ export const useJackpot = () => {
     }
   }, [userTicketIds, roundTicketIds]);
   
+  // Monitor contract state to detect completed rounds
+  useEffect(() => {
+    // This effect monitors if the round is completed in the contract but animation hasn't started
+    if (currentRound && currentRound.completed && !isDrawing && !winner && !isCompletingRound) {
+      debugLog("Round completed in contract but animation not started - starting animation automatically");
+      // Start drawing animation when we detect a completed round without animation
+      startDrawing();
+    }
+  }, [currentRound, isDrawing, winner, isCompletingRound]);
+
   // Countdown timer effect
   useEffect(() => {
     let interval;
@@ -400,11 +418,26 @@ export const useJackpot = () => {
         // Aktualizujemy tylko jeśli się zmienił
         if (newTimeLeft !== timeLeft) {
           setTimeLeft(newTimeLeft);
+          
+          // Debug log when timer is approaching zero
+          if (newTimeLeft <= 10) {
+            debugLog(`Timer approaching zero: ${newTimeLeft} seconds left`);
+          }
+        }
+        
+        // Add debugging when timer reaches zero
+        if (newTimeLeft === 0 && timeLeft > 0) {
+          debugLog("============ AUTOMATION DEBUGGING ============");
+          debugLog("Timer reached zero");
+          debugLog("Current round:", currentRound);
+          debugLog("Current round completed:", currentRound?.completed);
+          debugLog("Is completing round flag:", isCompletingRound);
+          debugLog("==============================================");
         }
         
         // Dodany warunek !isCompletingRound, aby zapobiec wielokrotnemu wywołaniu
         if (newTimeLeft === 0 && currentRound && !currentRound.completed && !isCompletingRound) {
-          console.log('Countdown reached zero - automatically completing round with admin wallet');
+          debugLog('Countdown reached zero - automatically completing round with admin wallet');
           setIsCompletingRound(true); // Oznaczamy, że proces kończenia rundy jest w toku
           
           addNotification({
@@ -412,44 +445,69 @@ export const useJackpot = () => {
             message: 'Countdown ended! Drawing winner automatically...'
           });
           
-          // Use admin wallet to complete the round
-          completeRoundWithAdmin()
-            .then(result => {
-              if (result.success) {
-                addNotification({
-                  type: 'success',
-                  message: 'Round completed successfully!',
-                  txHash: result.txHash
-                });
-                
-                // Start the drawing animation after a delay
-                setTimeout(() => {
-                  startDrawing();
-                }, 2000);
-              } else {
-                addNotification({
-                  type: 'error',
-                  message: `Failed to complete round: ${result.error}`
-                });
-              }
-              // Reset flagi bez względu na wynik
+          // Use admin wallet to complete the round with retries
+          attemptCompleteRound()
+            .then(success => {
               setIsCompletingRound(false);
+              if (!success) {
+                console.error('Failed to complete round after multiple attempts');
+              }
             })
             .catch(err => {
-              console.error('Error completing round:', err);
-              addNotification({
-                type: 'error',
-                message: `Error completing round: ${err.message || 'Unknown error'}`
-              });
+              console.error('Error in retry mechanism:', err);
               setIsCompletingRound(false);
             });
         }
-      }, 100); // Częstsze odświeżanie dla płynniejszego wyglądu
+      }, 100);
     }
     
     return () => clearInterval(interval);
-  }, [timeLeft, currentRound, completeRoundWithAdmin, isCompletingRound]); // Dodajemy isCompletingRound do zależności
-  
+  }, [timeLeft, currentRound, isCompletingRound]); // Dependencje
+
+  // Retry mechanism for round completion
+  const attemptCompleteRound = async (maxRetries = 3, delay = 5000) => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        debugLog(`Attempt ${attempt + 1} to complete round with admin wallet`);
+        const result = await completeRoundWithAdmin();
+        
+        if (result.success) {
+          addNotification({
+            type: 'success',
+            message: 'Round completed successfully!',
+            txHash: result.txHash
+          });
+          
+          debugLog(`Round completion successful, txHash: ${result.txHash}`);
+          
+          // Wait for blockchain confirmation and refresh data
+          setTimeout(async () => {
+            await refreshAllData();
+            startDrawing();
+          }, 2000);
+          
+          return true;
+        }
+        
+        debugLog(`Attempt ${attempt + 1} failed: ${result.error}, retrying in ${delay/1000} seconds...`);
+        // Jeśli nie udało się, czekaj i spróbuj ponownie
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } catch (err) {
+        debugLog(`Attempt ${attempt + 1} failed with error:`, err);
+        
+        // If it's the last attempt and all failed
+        if (attempt === maxRetries - 1) {
+          addNotification({
+            type: 'error',
+            message: `Failed to complete round after ${maxRetries} attempts`
+          });
+        }
+      }
+    }
+    
+    return false;
+  };
+
   // Format time display
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -502,11 +560,21 @@ export const useJackpot = () => {
     }
   }, [roundIdError, roundDataError, currentRoundInfoError, userTicketsError, roundTicketsError]);
   
-  const startDrawing = () => {
+  // Enhanced startDrawing function to ensure it has the latest data
+  const startDrawing = async () => {
     if (isDrawing) return;
     
+    debugLog('Starting drawing animation sequence');
     setIsDrawing(true);
     setWinner(null);
+    
+    // Make sure we have the latest data before starting animation
+    try {
+      debugLog('Refreshing data before animation');
+      await refreshAllData();
+    } catch (err) {
+      debugLog('Error refreshing data before animation:', err);
+    }
     
     // Simulate ticket selection animation
     let counter = 0;
@@ -535,6 +603,8 @@ export const useJackpot = () => {
         // Set winner from contract data
         setTimeout(() => {
           if (currentRound && currentRound.completed && currentRound.winningTicketId) {
+            debugLog(`Setting winner: ticket #${currentRound.winningTicketId}, prize: ${weiToEther(currentRound.totalPool)}`);
+            
             // Create winner ticket object
             const winnerTicket = {
               id: currentRound.winningTicketId,
@@ -548,6 +618,8 @@ export const useJackpot = () => {
               ticket: winnerTicket,
               prize: weiToEther(currentRound.totalPool)
             });
+          } else {
+            debugLog('Warning: Could not determine winner from contract data:', currentRound);
           }
           setIsDrawing(false);
         }, 500);

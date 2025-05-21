@@ -307,40 +307,29 @@ const WheelSection = ({
               }}>
                 {formatTime(timeLeft)}
               </div>
-              <button 
-                onClick={() => {
-                  // Usuwamy wywołanie completeRound i używamy tylko startDrawing
-                  if (timeLeft === 0) {
-                    startDrawing();
-                  }
-                }}
-                style={{
+              {timeLeft === 0 && !isDrawing && !winner ? (
+                <div style={{
                   background: `linear-gradient(90deg, ${theme.accent.primary}, ${theme.accent.secondary})`,
                   color: 'white',
                   border: 'none',
                   borderRadius: '12px',
                   padding: '12px 20px',
-                  cursor: 'pointer',
+                  textAlign: 'center',
                   fontWeight: '600',
                   fontSize: '16px',
                   boxShadow: '0 8px 16px rgba(0, 0, 0, 0.2)',
-                  opacity: timeLeft > 0 ? 0.7 : 1,
-                  transition: 'transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease'
-                }}
-                disabled={timeLeft > 0}
-                onMouseEnter={(e) => {
-                  if (timeLeft === 0) {
-                    e.target.style.transform = 'translateY(-2px)';
-                    e.target.style.boxShadow = '0 12px 20px rgba(0, 0, 0, 0.3)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.transform = 'translateY(0)';
-                  e.target.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.2)';
-                }}
-              >
-                {timeLeft > 0 ? "Wait..." : "Show Animation"}
-              </button>
+                  animation: 'pulse 1.5s infinite'
+                }}>
+                  Drawing winner automatically...
+                </div>
+              ) : timeLeft > 0 ? (
+                <div style={{
+                  color: theme.text.secondary,
+                  fontSize: '14px'
+                }}>
+                  Winner will be drawn automatically
+                </div>
+              ) : null}
             </div>
           )}
           

@@ -21,7 +21,10 @@ export const useAdminWallet = () => {
         const adminPrivateKey = process.env.REACT_APP_ADMIN_PRIVATE_KEY;
         
         if (!adminPrivateKey) {
-          throw new Error('Admin private key not found in environment variables');
+          console.error('Admin private key not found in environment variables! Automatic round completion will not work!');
+          setError('Admin private key not configured');
+          setIsLoading(false);
+          return;
         }
         
         // Create account from private key
@@ -41,7 +44,7 @@ export const useAdminWallet = () => {
         setAdminWallet({ client, account });
         setIsLoading(false);
         
-        console.log('Admin wallet initialized:', account.address);
+        console.log('Admin wallet initialized successfully:', account.address);
       } catch (err) {
         console.error('Error initializing admin wallet:', err);
         setError(err.message);
