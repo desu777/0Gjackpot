@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseEther } from 'viem';
 import { formatAddress, weiToEther, formatTimestamp, getContractAddresses } from '../config/envConfig';
@@ -35,6 +35,9 @@ export const useJackpot = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [ticketOwners, setTicketOwners] = useState({});
   const [isCompletingRound, setIsCompletingRound] = useState(false);
+  
+  // Flag to prevent multiple round completion attempts
+  const hasAttemptedAutoComplete = useRef(false);
 
   // Constants
   const MIN_PAYMENT = 0.02; // Minimum payment to start the countdown
@@ -256,27 +259,28 @@ export const useJackpot = () => {
         });
         
         // Handle timer reaching zero
-        if (newTimeLeft === 0 && !isCompletingRound && currentRound.isActive) {
+        if (newTimeLeft === 0 && !isCompletingRound && currentRound.isActive && !hasAttemptedAutoComplete.current) {
           debugLog("============ AUTOMATION DEBUGGING ============");
           debugLog("Odliczanie zakończone, przystępuję do losowania zwycięzcy");
           debugLog("Current round:", currentRound);
           debugLog("Current round completed:", currentRound?.completed);
           debugLog("Is completing round flag:", isCompletingRound);
+          debugLog("Has attempted auto complete:", hasAttemptedAutoComplete.current);
           debugLog("==============================================");
           
+          // Zaznacz, że już próbowaliśmy zakończyć rundę, aby zapobiec ponownemu wywołaniu
+          hasAttemptedAutoComplete.current = true;
           debugLog('Rozpoczynam proces zakończenia rundy');
           setIsCompletingRound(true);
           
-          addNotification({
-            type: 'info',
-            message: 'Countdown ended! Drawing winner automatically...'
-          });
+          // Usunięto powiadomienie o rozpoczęciu losowania, aby uniknąć spamu
           
           // Trigger round completion logic when timer reaches zero
           setTimeout(() => {
             attemptCompleteRound()
               .finally(() => {
-                setIsCompletingRound(false);
+                // isCompletingRound będzie resetowane dopiero po potwierdzeniu zakończenia rundy
+                // lub po timeout w attemptCompleteRound
               });
           }, 100);
         }
@@ -403,6 +407,18 @@ export const useJackpot = () => {
       console.log('Processed round from getCurrentRoundInfo:', round);
       setCurrentRound(round);
       
+      // Resetuj flagę próby automatycznego zakończenia rundy przy nowej rundzie
+      if (round.timeLeft > 0) {
+        hasAttemptedAutoComplete.current = false;
+        debugLog("Nowa aktywna runda, resetuję flagę hasAttemptedAutoComplete");
+      }
+      
+      // Resetuj flagę isCompletingRound, gdy runda została zakończona w łańcuchu
+      if (round.completed && isCompletingRound) {
+        debugLog("Runda została zakończona w łańcuchu, resetuję isCompletingRound");
+        setIsCompletingRound(false);
+      }
+      
       // NIE ustawiamy timeLeft z danych kontraktu, jest to obliczane w oddzielnym efekcie
     } 
     // Fallback do starszego sposobu jeśli getCurrentRoundInfo nie jest dostępne
@@ -463,18 +479,22 @@ export const useJackpot = () => {
 
   // Dodanie mechanizmu fallback bezpieczeństwa
   useEffect(() => {
-    // Jeśli timer doszedł do zera, ale nic się nie dzieje przez 10 sekund, uruchom animację
-    if (timeLeft === 0 && !winner && !isDrawing && !isCompletingRound) {
-      debugLog("Uruchamiam mechanizm bezpieczeństwa - oczekiwanie na animację");
+    // Jeśli timer doszedł do zera, ale nic się nie dzieje przez 10 sekund, resetujemy flagi i próbujemy odświeżyć dane
+    if (timeLeft === 0 && !winner && !isDrawing && !isCompletingRound && hasAttemptedAutoComplete.current) {
+      debugLog("Uruchamiam mechanizm bezpieczeństwa - oczekiwanie na zakończenie rundy");
       
       const fallbackTimer = setTimeout(() => {
-        debugLog("Uruchamiam awaryjną animację po 10 sekundach bezczynności");
-        startDrawing();
-      }, 10000);
+        debugLog("Resetowanie stanu po 15 sekundach bezczynności i odświeżanie danych");
+        // Tylko odśwież dane, nie uruchamiaj animacji - niech efekt monitorujący zakończone rundy się tym zajmie
+        refreshAllData();
+        
+        // Po 15s bezczynności, resetuj flagę by umożliwić nowe próby
+        setIsCompletingRound(false);
+      }, 15000);
       
       return () => clearTimeout(fallbackTimer);
     }
-  }, [timeLeft, winner, isDrawing, isCompletingRound]);
+  }, [timeLeft, winner, isDrawing, isCompletingRound, hasAttemptedAutoComplete.current]);
 
   // Retry mechanism for round completion
   const attemptCompleteRound = async (maxRetries = 3, delay = 5000) => {
@@ -520,17 +540,21 @@ export const useJackpot = () => {
       }
     }
     
-    // Nawet jeśli transakcja nie powiodła się, kontynuuj z animacją
+    // Bez względu na wynik, odśwież dane i zresetuj flagę isCompletingRound
+    await refreshAllData();
+    
+    // Nawet jeśli transakcja nie powiodła się, dodaj notyfikację
     if (!success) {
-      debugLog("Nie udało się zakończyć rundy na blockchain, ale kontynuujemy z animacją");
-      addNotification({
-        type: 'warning',
-        message: 'Could not complete round on blockchain, but animation will be shown'
-      });
+      debugLog("Nie udało się zakończyć rundy na blockchain");
+      // Usunięto powiadomienie o niepowodzeniu, aby uniknąć spamu
+      
+      // Pozwól na ponowne próby po pewnym czasie
+      setTimeout(() => {
+        setIsCompletingRound(false);
+      }, 10000);
     }
     
-    // Uruchom animację w każdym przypadku
-    startDrawing();
+    // NIE uruchamiamy tu animacji - zostanie ona uruchomiona przez efekt monitorujący currentRound.completed
     return success;
   };
 
