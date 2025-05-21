@@ -28,7 +28,8 @@ const ConnectedView = ({
   lockPeriod,
   isRefreshing,
   ticketOwners,
-  shortenAddress
+  shortenAddress,
+  roundTickets
 }) => {
   const { openChainModal } = useChainModal();
   
@@ -139,6 +140,7 @@ const ConnectedView = ({
           formatTime={formatTime}
           startDrawing={startDrawing}
           completeRound={completeRound}
+          mockTickets={mockTickets}
         />
       </div>
       

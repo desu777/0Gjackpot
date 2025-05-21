@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import theme from '../theme/ThemeConfig';
+import { TICKET_PRICE } from '../../../config/envConfig';
 
 /**
  * Panel for buying lottery tickets
@@ -13,7 +14,7 @@ const BuyPanel = ({ mockData, buyTickets, isPending, isBuyingAllowed, minPayment
     }
   };
   
-  const ticketsCount = Math.floor(amount / 0.01);
+  const ticketsCount = Math.floor(amount / TICKET_PRICE);
   const isLockPeriod = timeLeft > 0 && timeLeft <= lockPeriod;
 
   // Generate buying disabled message
@@ -109,6 +110,9 @@ const BuyPanel = ({ mockData, buyTickets, isPending, isBuyingAllowed, minPayment
             WebkitTextFillColor: 'transparent'
           }}>
             {ticketsCount} tickets
+          </div>
+          <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '12px', marginTop: '8px' }}>
+            ({TICKET_PRICE} 0G per ticket)
           </div>
         </div>
 

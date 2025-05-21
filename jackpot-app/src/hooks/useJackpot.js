@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseEther } from 'viem';
-import { formatAddress, weiToEther, formatTimestamp, getContractAddresses } from '../config/envConfig';
+import { formatAddress, weiToEther, formatTimestamp, getContractAddresses, MIN_PAYMENT } from '../config/envConfig';
 import { JACKPOT_ABI } from '../config/contractConfig';
 import { readContract } from 'wagmi/actions';
 import { useAdminWallet } from './useAdminWallet';
@@ -35,12 +35,14 @@ export const useJackpot = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [ticketOwners, setTicketOwners] = useState({});
   const [isCompletingRound, setIsCompletingRound] = useState(false);
+  const [drawnRounds, setDrawnRounds] = useState(new Set());
   
   // Flag to prevent multiple round completion attempts
   const hasAttemptedAutoComplete = useRef(false);
+  // Store drawn rounds in useRef to prevent animation reruns
+  const drawnRoundsRef = useRef(new Set());
 
   // Constants
-  const MIN_PAYMENT = 0.02; // Minimum payment to start the countdown
   const LOCK_PERIOD = 5; // Seconds before end when buying is disabled
   
   // Admin wallet integration
@@ -284,6 +286,17 @@ export const useJackpot = () => {
               });
           }, 100);
         }
+        
+        // fallback: koło nie ruszyło w ciągu 3 s → start!
+        if (newTimeLeft === 0 && !isDrawing && !winner) {
+          const fallback = setTimeout(() => {
+            if (!isDrawing && !winner) {
+              debugLog('Fallback – uruchamiam animację po 3 s ciszy');
+              startDrawing();
+            }
+          }, 3000);
+          return () => clearTimeout(fallback);
+        }
       }, 1000); // Update timer every second is sufficient
     }
     
@@ -470,6 +483,13 @@ export const useJackpot = () => {
     if (currentRound && currentRound.completed && !isDrawing && !winner && !isCompletingRound) {
       debugLog("Runda zakończona w kontrakcie, ale animacja nie została uruchomiona - uruchamiam automatycznie");
       // Start drawing animation when we detect a completed round without animation
+      
+      // Add notification for automatic drawing start
+      addNotification({
+        type: 'info',
+        message: 'Countdown ended! Drawing winner automatically...'
+      });
+      
       startDrawing();
     }
   }, [currentRound, isDrawing, winner, isCompletingRound]);
@@ -550,7 +570,9 @@ export const useJackpot = () => {
       
       // Pozwól na ponowne próby po pewnym czasie
       setTimeout(() => {
-        setIsCompletingRound(false);
+        // NIE resetujemy flagi automatycznie - będzie zresetowana w efekcie,
+        // który śledzi currentRound.completed
+        // setIsCompletingRound(false);
       }, 10000);
     }
     
@@ -618,14 +640,23 @@ export const useJackpot = () => {
   
   // Enhanced startDrawing function to ensure it has the latest data
   const startDrawing = async () => {
-    if (isDrawing) {
-      debugLog('Animation already in progress, skipping startDrawing call');
+    if (isDrawing || !currentRound || !currentRound.id) {
+      debugLog('Cannot start drawing - drawing already in progress or no current round');
+      return;
+    }
+    
+    // Check if we already drew this round to prevent duplicate animations
+    if (drawnRoundsRef.current.has(currentRound.id)) {
+      debugLog(`Round ${currentRound.id} already drawn, skipping animation`);
       return;
     }
     
     debugLog('Starting drawing animation sequence');
     setIsDrawing(true);
     setWinner(null);
+    
+    // Add this round to the set of drawn rounds
+    drawnRoundsRef.current.add(currentRound.id);
     
     // Make sure we have the latest data before starting animation
     try {

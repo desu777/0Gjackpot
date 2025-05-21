@@ -20,6 +20,10 @@ export const getContractAddresses = () => {
   };
 };
 
+// Jackpot constants
+export const TICKET_PRICE = parseFloat(process.env.REACT_APP_TICKET_PRICE || '0.01');
+export const MIN_PAYMENT = parseFloat(process.env.REACT_APP_MIN_PAYMENT || '0.02');
+
 // Format address for display (0x1234...5678)
 export const formatAddress = (address) => {
   if (!address || address.length < 10) return address;

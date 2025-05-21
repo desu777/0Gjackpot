@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import theme from '../theme/ThemeConfig';
 
 /**
@@ -12,10 +12,12 @@ const WheelSection = ({
   winner,
   formatTime,
   startDrawing,
-  completeRound
+  completeRound,
+  mockTickets = [] // Add this prop to access the actual tickets
 }) => {
   // Add confetti state
   const [showConfetti, setShowConfetti] = useState(false);
+  const [confetti, setConfetti] = useState(null);
   const [windowSize, setWindowSize] = useState({ 
     width: typeof window !== 'undefined' ? window.innerWidth : 1000, 
     height: typeof window !== 'undefined' ? window.innerHeight : 800
@@ -23,16 +25,22 @@ const WheelSection = ({
   
   // Add animation speed state
   const [rotationSpeed, setRotationSpeed] = useState(2);
+  const [wheelRotation, setWheelRotation] = useState(0);
+  
+  // Use actual tickets for wheel segments
+  const tickets = useMemo(() => mockTickets, [mockTickets]);
   const [wheelSegments, setWheelSegments] = useState([]);
   
-  // Generate random ticket numbers for the wheel
+  // Odśwież segmenty gdy zmienią się bilety rundy
   useEffect(() => {
-    const segments = Array.from({ length: 12 }).map((_, i) => ({
-      id: Math.floor(Math.random() * 100) + 1,
+    if (!mockTickets?.length) return;
+
+    const segments = mockTickets.map((t, i) => ({
+      id: t.id,
       color: i % 2 === 0 ? theme.accent.primary : theme.accent.secondary
     }));
     setWheelSegments(segments);
-  }, []);
+  }, [mockTickets]);
   
   // Update window size when component mounts
   useEffect(() => {
@@ -63,49 +71,47 @@ const WheelSection = ({
     }
   }, [winner]);
 
-  // Control wheel animation speed during drawing
+  // Help animation to stop exactly on the winner
   useEffect(() => {
-    if (isDrawing) {
-      // Start fast and gradually slow down
-      setRotationSpeed(5);
-      
-      const speedInterval = setInterval(() => {
-        setRotationSpeed(prev => {
-          const newSpeed = prev - 0.1;
-          return newSpeed > 0.5 ? newSpeed : 0.5;
-        });
-      }, 300);
-      
-      return () => clearInterval(speedInterval);
-    } else {
-      setRotationSpeed(2);
+    if (!winner) return;
+
+    const idx = wheelSegments.findIndex(s => s.id === winner.ticket.id);
+    if (idx === -1) return;
+
+    const rotations = 5;            // pełne obroty
+    const degPerSegment = 360 / wheelSegments.length;
+    const targetDeg = rotations * 360 + idx * degPerSegment;
+
+    // CSS-em
+    const wheel = document.getElementById('wheel-spinning');
+    if (wheel) {
+      wheel.style.transition = 'transform 4s cubic-bezier(0.25,0.1,0.25,1)';
+      wheel.style.transform = `rotate(${targetDeg}deg)`;
     }
-  }, [isDrawing]);
+  }, [winner, wheelSegments]);
 
   // Import confetti dynamically to avoid SSR issues
   useEffect(() => {
     if (showConfetti) {
-      import('react-confetti').then(({ default: ReactConfetti }) => {
-        const confettiElement = document.getElementById('confetti-container');
-        if (confettiElement && ReactConfetti) {
-          const confetti = ReactConfetti({
-            width: windowSize.width,
-            height: windowSize.height,
-            recycle: false,
-            numberOfPieces: 500,
-            gravity: 0.1,
-            colors: ['#00D2E9', '#FF5CAA', '#00B897', '#FFAB44', '#FFFFFF']
-          });
-          confettiElement.appendChild(confetti);
-          
-          // Clean up
-          return () => {
-            if (confettiElement.contains(confetti)) {
-              confettiElement.removeChild(confetti);
-            }
-          };
+      const loadConfetti = async () => {
+        try {
+          const ReactConfetti = (await import('react-confetti')).default;
+          setConfetti(<ReactConfetti
+            width={windowSize.width}
+            height={windowSize.height}
+            recycle={false}
+            numberOfPieces={500}
+            gravity={0.1}
+            colors={['#00D2E9', '#FF5CAA', '#00B897', '#FFAB44', '#FFFFFF']}
+          />);
+        } catch (error) {
+          console.error('Failed to load confetti:', error);
         }
-      });
+      };
+      
+      loadConfetti();
+    } else {
+      setConfetti(null);
     }
   }, [showConfetti, windowSize]);
 
@@ -119,16 +125,8 @@ const WheelSection = ({
       border: 'none',
       overflow: 'hidden'
     }}>
-      {/* Confetti container */}
-      <div id="confetti-container" style={{ 
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        pointerEvents: 'none',
-        zIndex: 1000
-      }} />
+      {/* Render confetti as a React component */}
+      {confetti}
       
       {/* Glow effect for winner state */}
       {winner && (
@@ -170,7 +168,7 @@ const WheelSection = ({
           height: '300px',
           borderRadius: '50%',
           position: 'relative',
-          boxShadow: `0 0 30px rgba(${theme.accent.primary.slice(1,3)},${theme.accent.primary.slice(3,5)},${theme.accent.primary.slice(5,7)}, 0.15)`,
+          boxShadow: `0 0 30px rgba(${parseInt(theme.accent.primary.slice(1,3), 16)}, ${parseInt(theme.accent.primary.slice(3,5), 16)}, ${parseInt(theme.accent.primary.slice(5,7), 16)}, 0.15)`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -183,26 +181,28 @@ const WheelSection = ({
               : `1px solid rgba(60, 75, 95, 0.5)`,
           transition: 'box-shadow 0.3s ease, border 0.3s ease',
           boxShadow: isDrawing 
-            ? `0 0 30px rgba(${theme.accent.primary.slice(1,3)},${theme.accent.primary.slice(3,5)},${theme.accent.primary.slice(5,7)}, 0.4)` 
+            ? `0 0 30px rgba(${parseInt(theme.accent.primary.slice(1,3), 16)}, ${parseInt(theme.accent.primary.slice(3,5), 16)}, ${parseInt(theme.accent.primary.slice(5,7), 16)}, 0.4)` 
             : winner 
-              ? `0 0 30px rgba(${theme.accent.secondary.slice(1,3)},${theme.accent.secondary.slice(3,5)},${theme.accent.secondary.slice(5,7)}, 0.4)` 
-              : `0 0 30px rgba(${theme.accent.primary.slice(1,3)},${theme.accent.primary.slice(3,5)},${theme.accent.primary.slice(5,7)}, 0.15)`
+              ? `0 0 30px rgba(${parseInt(theme.accent.secondary.slice(1,3), 16)}, ${parseInt(theme.accent.secondary.slice(3,5), 16)}, ${parseInt(theme.accent.secondary.slice(5,7), 16)}, 0.4)` 
+              : `0 0 30px rgba(${parseInt(theme.accent.primary.slice(1,3), 16)}, ${parseInt(theme.accent.primary.slice(3,5), 16)}, ${parseInt(theme.accent.primary.slice(5,7), 16)}, 0.15)`
         }}>
           {/* Drawing wheel animation */}
           {isDrawing ? (
-            <div style={{
-              position: 'absolute',
-              width: '100%',
-              height: '100%',
-              animation: `spin ${rotationSpeed}s infinite linear`
-            }}>
+            <div 
+              id="wheel-spinning"
+              style={{
+                position: 'absolute',
+                width: '100%',
+                height: '100%'
+              }}
+            >
               {/* Wheel segments */}
               {wheelSegments.map((segment, i) => (
                 <div key={i} style={{
                   position: 'absolute',
                   width: '100%',
                   height: '100%',
-                  transform: `rotate(${i * 30}deg)`,
+                  transform: `rotate(${i * (360 / wheelSegments.length)}deg)`,
                   transformOrigin: 'center',
                   zIndex: 1
                 }}>
@@ -386,11 +386,6 @@ const WheelSection = ({
       
       {/* Add CSS animation for confetti */}
       <style jsx="true">{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
         @keyframes pulse {
           0% { opacity: 0.7; }
           50% { opacity: 1; }

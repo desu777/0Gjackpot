@@ -21,10 +21,6 @@ const JackpotPage = () => {
   // State for managing different views
   const [activeView, setActiveView] = useState('landing'); // landing, connected, drawing
   const [showWheel, setShowWheel] = useState(true);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [currentTicket, setCurrentTicket] = useState(null);
-  const [winner, setWinner] = useState(null);
-  const [showWinnerNotification, setShowWinnerNotification] = useState(false);
   
   // Get jackpot contract data
   const {
@@ -41,7 +37,12 @@ const JackpotPage = () => {
     completeRound,
     formatTime,
     
-    // New additions
+    isDrawing,
+    currentTicket,
+    winner,
+    startDrawing,
+    resetDrawingState,
+    
     notifications,
     removeNotification,
     isBuyingAllowed,
@@ -120,53 +121,6 @@ const JackpotPage = () => {
     isUser: userTickets.includes(ticketId)
   })) : [];
   
-  // Start drawing animation (simulated - in real implementation this would be triggered by contract events)
-  const startDrawing = () => {
-    if (isDrawing || !currentRound || !currentRound.completed) return;
-    
-    setIsDrawing(true);
-    setWinner(null);
-    
-    // Simulate ticket selection animation
-    let counter = 0;
-    const drawInterval = setInterval(() => {
-      counter++;
-      const randomIndex = Math.floor(Math.random() * ticketsData.length);
-      setCurrentTicket(ticketsData[randomIndex]);
-      
-      // Slow down and stop at a random ticket after a few seconds
-      if (counter > 30) {
-        clearInterval(drawInterval);
-        
-        // Set winner from contract data
-        setTimeout(() => {
-          if (currentRound && currentRound.completed) {
-            const winningTicket = ticketsData.find(t => t.id === currentRound.winningTicketId);
-            
-            // Get the owner's address from ticketOwners mapping
-            const winningTicketOwner = ticketOwners[currentRound.winningTicketId];
-            
-            // Create enhanced ticket object with owner address
-            const enhancedTicket = {
-              ...winningTicket,
-              owner: shortenAddress(winningTicketOwner) // Use the shortenAddress function
-            };
-            
-            setCurrentTicket(enhancedTicket || ticketsData[0]);
-            setWinner({
-              ticket: enhancedTicket || ticketsData[0],
-              prize: currentRound.totalPool
-            });
-            
-            // Show winner notification
-            setShowWinnerNotification(true);
-          }
-          setIsDrawing(false);
-        }, 500);
-      }
-    }, 100);
-  };
-
   // Handler for buying tickets
   const handleBuyTickets = (amount) => {
     buyTickets(amount.toString());
@@ -203,7 +157,7 @@ const JackpotPage = () => {
             winner={winner}
             setActiveView={setActiveView}
             setTimeLeft={handleSetTimeLeft}
-            startDrawing={startDrawing}
+            startDrawing={null}
             formatTime={formatTime}
             isCorrectChain={isCorrectChain}
             buyTickets={handleBuyTickets}
@@ -211,13 +165,13 @@ const JackpotPage = () => {
             isPending={isTransactionPending}
             isBuyingAllowed={isBuyingAllowed}
             minPayment={minPayment}
-            timeLeft={timeLeft}
             lockPeriod={lockPeriod}
             isRefreshing={isRefreshing}
             refreshCount={refreshCount}
             refreshPoolData={refreshPoolData}
             ticketOwners={ticketOwners}
             shortenAddress={shortenAddress}
+            roundTickets={roundTickets}
           />
         )}
       </MainLayout>
@@ -229,10 +183,10 @@ const JackpotPage = () => {
       />
       
       {/* Winner notification */}
-      {showWinnerNotification && winner && (
+      {winner && !isDrawing && (
         <WinnerNotification 
           winner={winner}
-          onClose={() => setShowWinnerNotification(false)}
+          onClose={() => resetDrawingState()}
         />
       )}
     </>
