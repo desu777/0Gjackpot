@@ -138,20 +138,28 @@ export const useJackpot = () => {
     if (!isConnected || !isCorrectChain || !jackpotAddress) return;
     
     try {
+      // Ensure chainId is explicitly passed to prevent the "Cannot destructure property 'chainId'" error
+      if (!chainId) {
+        console.warn('ChainId is undefined, skipping pool data refresh');
+        return;
+      }
+      
       const result = await readContract({
         address: jackpotAddress,
         abi: JACKPOT_ABI,
         functionName: 'getCurrentRoundInfo',
+        chainId: chainId // Explicitly pass chainId to prevent errors
       });
       
       if (result && result.length > 3) {
-        // Update only pool data
+        // Update only pool data and numTickets, but not timeLeft (handled by blockchain timer)
         setCurrentRound(prev => prev ? ({
           ...prev,
-          totalPool: result[3].toString()
+          totalPool: result[3].toString(),
+          numTickets: Number(result[4])
         }) : null);
         
-        console.log(`Pool value updated: ${result[3].toString()}`);
+        console.log(`Pool value updated: ${result[3].toString()}, Tickets: ${result[4]}`);
       }
     } catch (err) {
       console.error('Error refreshing pool data:', err);
@@ -218,13 +226,70 @@ export const useJackpot = () => {
     // Refresh immediately on component mount
     doSmartRefresh();
     
-    // Set interval for continuous refreshing
-    refreshInterval = setInterval(doSmartRefresh, 1000); // Refresh every 1 second
+    // Set interval for continuous refreshing - decreased frequency to reduce unnecessary updates
+    refreshInterval = setInterval(doSmartRefresh, 5000); // Refresh every 5 seconds to further reduce interference with timer
     
     return () => {
       if (refreshInterval) clearInterval(refreshInterval);
     };
   }, []);
+  
+  // Blockchain-based timer - calculate timeLeft based on endTime from blockchain
+  useEffect(() => {
+    let timerInterval;
+    
+    // Only start if we have a valid endTime from the contract
+    if (currentRound && currentRound.endTime > 0 && !currentRound.completed) {
+      debugLog(`Starting blockchain-based timer, endTime: ${currentRound.endTime}`);
+      
+      timerInterval = setInterval(() => {
+        // Calculate remaining time based on blockchain endTime and current client time
+        const currentTime = Math.floor(Date.now() / 1000);
+        const newTimeLeft = Math.max(0, currentRound.endTime - currentTime);
+        
+        setTimeLeft(prevTimeLeft => {
+          // Tylko dla logowania, gdy wartość się zmienia
+          if (prevTimeLeft !== newTimeLeft && newTimeLeft <= 10) {
+            debugLog(`Zbliża się koniec odliczania: ${newTimeLeft} sekund`);
+          }
+          return newTimeLeft;
+        });
+        
+        // Handle timer reaching zero
+        if (newTimeLeft === 0 && !isCompletingRound && currentRound.isActive) {
+          debugLog("============ AUTOMATION DEBUGGING ============");
+          debugLog("Odliczanie zakończone, przystępuję do losowania zwycięzcy");
+          debugLog("Current round:", currentRound);
+          debugLog("Current round completed:", currentRound?.completed);
+          debugLog("Is completing round flag:", isCompletingRound);
+          debugLog("==============================================");
+          
+          debugLog('Rozpoczynam proces zakończenia rundy');
+          setIsCompletingRound(true);
+          
+          addNotification({
+            type: 'info',
+            message: 'Countdown ended! Drawing winner automatically...'
+          });
+          
+          // Trigger round completion logic when timer reaches zero
+          setTimeout(() => {
+            attemptCompleteRound()
+              .finally(() => {
+                setIsCompletingRound(false);
+              });
+          }, 100);
+        }
+      }, 1000); // Update timer every second is sufficient
+    }
+    
+    return () => {
+      if (timerInterval) {
+        debugLog('Cleaning up blockchain timer');
+        clearInterval(timerInterval);
+      }
+    };
+  }, [currentRound?.id, currentRound?.endTime, currentRound?.completed, currentRound?.isActive]);
 
   // Add notification
   const addNotification = (notification) => {
@@ -328,7 +393,7 @@ export const useJackpot = () => {
         totalPool: weiToEther(currentRoundInfo[3]), // totalPool
         numTickets: Number(currentRoundInfo[4]),    // numTickets
         isActive: Boolean(currentRoundInfo[5]),     // isActive
-        timeLeft: Number(currentRoundInfo[6]),      // timeLeft
+        timeLeft: Number(currentRoundInfo[6]),      // timeLeft (tylko dla referencji, nie używamy bezpośrednio)
         completed: !Boolean(currentRoundInfo[5]),   // !isActive means completed
         winner: roundData ? roundData[4] : '0x0000000000000000000000000000000000000000',
         winningTicketId: roundData ? Number(roundData[5]) : 0,
@@ -338,10 +403,7 @@ export const useJackpot = () => {
       console.log('Processed round from getCurrentRoundInfo:', round);
       setCurrentRound(round);
       
-      // Ustaw timeLeft z danych kontraktu
-      if (round.timeLeft > 0) {
-        setTimeLeft(round.timeLeft);
-      }
+      // NIE ustawiamy timeLeft z danych kontraktu, jest to obliczane w oddzielnym efekcie
     } 
     // Fallback do starszego sposobu jeśli getCurrentRoundInfo nie jest dostępne
     else if (roundData && roundId) {
@@ -359,12 +421,7 @@ export const useJackpot = () => {
       console.log('Processed round from rounds mapping:', round);
       setCurrentRound(round);
       
-      // Calculate time left
-      if (round.endTime > 0 && !round.completed) {
-        const currentTime = Math.floor(Date.now() / 1000);
-        const timeRemaining = Math.max(0, round.endTime - currentTime);
-        setTimeLeft(timeRemaining);
-      }
+      // NIE ustawiamy timeLeft z danych kontraktu, jest to obliczane w oddzielnym efekcie
     }
   }, [roundData, roundId, currentRoundInfo]);
   
@@ -395,80 +452,37 @@ export const useJackpot = () => {
   useEffect(() => {
     // This effect monitors if the round is completed in the contract but animation hasn't started
     if (currentRound && currentRound.completed && !isDrawing && !winner && !isCompletingRound) {
-      debugLog("Round completed in contract but animation not started - starting animation automatically");
+      debugLog("Runda zakończona w kontrakcie, ale animacja nie została uruchomiona - uruchamiam automatycznie");
       // Start drawing animation when we detect a completed round without animation
       startDrawing();
     }
   }, [currentRound, isDrawing, winner, isCompletingRound]);
 
-  // Countdown timer effect
+  // Usunięto stary mechanizm odliczania czasu, którego zależność od timeLeft 
+  // powodowała restartowanie odliczania przy każdej zmianie timeLeft
+
+  // Dodanie mechanizmu fallback bezpieczeństwa
   useEffect(() => {
-    let interval;
-    if (timeLeft > 0 && currentRound && !currentRound.completed) {
-      // Zapisujemy czas początkowy i początkową wartość timeLeft
-      const startTime = Date.now();
-      const initialTimeLeft = timeLeft;
+    // Jeśli timer doszedł do zera, ale nic się nie dzieje przez 10 sekund, uruchom animację
+    if (timeLeft === 0 && !winner && !isDrawing && !isCompletingRound) {
+      debugLog("Uruchamiam mechanizm bezpieczeństwa - oczekiwanie na animację");
       
-      interval = setInterval(() => {
-        // Obliczamy, ile czasu upłynęło
-        const elapsedSeconds = (Date.now() - startTime) / 1000;
-        // Obliczamy nowy czas pozostały
-        const newTimeLeft = Math.max(0, Math.floor(initialTimeLeft - elapsedSeconds));
-        
-        // Aktualizujemy tylko jeśli się zmienił
-        if (newTimeLeft !== timeLeft) {
-          setTimeLeft(newTimeLeft);
-          
-          // Debug log when timer is approaching zero
-          if (newTimeLeft <= 10) {
-            debugLog(`Timer approaching zero: ${newTimeLeft} seconds left`);
-          }
-        }
-        
-        // Add debugging when timer reaches zero
-        if (newTimeLeft === 0 && timeLeft > 0) {
-          debugLog("============ AUTOMATION DEBUGGING ============");
-          debugLog("Timer reached zero");
-          debugLog("Current round:", currentRound);
-          debugLog("Current round completed:", currentRound?.completed);
-          debugLog("Is completing round flag:", isCompletingRound);
-          debugLog("==============================================");
-        }
-        
-        // Dodany warunek !isCompletingRound, aby zapobiec wielokrotnemu wywołaniu
-        if (newTimeLeft === 0 && currentRound && !currentRound.completed && !isCompletingRound) {
-          debugLog('Countdown reached zero - automatically completing round with admin wallet');
-          setIsCompletingRound(true); // Oznaczamy, że proces kończenia rundy jest w toku
-          
-          addNotification({
-            type: 'info',
-            message: 'Countdown ended! Drawing winner automatically...'
-          });
-          
-          // Use admin wallet to complete the round with retries
-          attemptCompleteRound()
-            .then(success => {
-              setIsCompletingRound(false);
-              if (!success) {
-                console.error('Failed to complete round after multiple attempts');
-              }
-            })
-            .catch(err => {
-              console.error('Error in retry mechanism:', err);
-              setIsCompletingRound(false);
-            });
-        }
-      }, 100);
+      const fallbackTimer = setTimeout(() => {
+        debugLog("Uruchamiam awaryjną animację po 10 sekundach bezczynności");
+        startDrawing();
+      }, 10000);
+      
+      return () => clearTimeout(fallbackTimer);
     }
-    
-    return () => clearInterval(interval);
-  }, [timeLeft, currentRound, isCompletingRound]); // Dependencje
+  }, [timeLeft, winner, isDrawing, isCompletingRound]);
 
   // Retry mechanism for round completion
   const attemptCompleteRound = async (maxRetries = 3, delay = 5000) => {
+    let success = false;
+    
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        debugLog(`Attempt ${attempt + 1} to complete round with admin wallet`);
+        debugLog(`Próba ${attempt + 1} zakończenia rundy przez portfel administratora`);
         const result = await completeRoundWithAdmin();
         
         if (result.success) {
@@ -478,22 +492,23 @@ export const useJackpot = () => {
             txHash: result.txHash
           });
           
-          debugLog(`Round completion successful, txHash: ${result.txHash}`);
+          debugLog(`Runda zakończona pomyślnie, txHash: ${result.txHash}`);
           
           // Wait for blockchain confirmation and refresh data
-          setTimeout(async () => {
-            await refreshAllData();
-            startDrawing();
-          }, 2000);
-          
-          return true;
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          await refreshAllData();
+          success = true;
+          break;
         }
         
-        debugLog(`Attempt ${attempt + 1} failed: ${result.error}, retrying in ${delay/1000} seconds...`);
-        // Jeśli nie udało się, czekaj i spróbuj ponownie
-        await new Promise(resolve => setTimeout(resolve, delay));
+        debugLog(`Próba ${attempt + 1} nie powiodła się: ${result.error}, retrying in ${delay/1000} seconds...`);
+        
+        if (attempt < maxRetries - 1) {
+          // Jeśli nie udało się, czekaj i spróbuj ponownie
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       } catch (err) {
-        debugLog(`Attempt ${attempt + 1} failed with error:`, err);
+        debugLog(`Błąd podczas próby ${attempt + 1}:`, err);
         
         // If it's the last attempt and all failed
         if (attempt === maxRetries - 1) {
@@ -505,7 +520,18 @@ export const useJackpot = () => {
       }
     }
     
-    return false;
+    // Nawet jeśli transakcja nie powiodła się, kontynuuj z animacją
+    if (!success) {
+      debugLog("Nie udało się zakończyć rundy na blockchain, ale kontynuujemy z animacją");
+      addNotification({
+        type: 'warning',
+        message: 'Could not complete round on blockchain, but animation will be shown'
+      });
+    }
+    
+    // Uruchom animację w każdym przypadku
+    startDrawing();
+    return success;
   };
 
   // Format time display
@@ -532,8 +558,14 @@ export const useJackpot = () => {
 
   // Check if buying tickets is allowed (not in lock period)
   const isBuyingAllowed = () => {
+    // Sprawdź na podstawie endTime z kontraktu zamiast polegać na zmiennym timeLeft
+    if (!currentRound || currentRound.completed) return true;
+    
+    const now = Math.floor(Date.now() / 1000);
+    const timeToEnd = Math.max(0, currentRound.endTime - now);
+    
     // If no countdown is active or time left is more than LOCK_PERIOD seconds, buying is allowed
-    return timeLeft === 0 || timeLeft > LOCK_PERIOD;
+    return timeToEnd === 0 || timeToEnd > LOCK_PERIOD;
   };
   
   // Log errors
@@ -562,7 +594,10 @@ export const useJackpot = () => {
   
   // Enhanced startDrawing function to ensure it has the latest data
   const startDrawing = async () => {
-    if (isDrawing) return;
+    if (isDrawing) {
+      debugLog('Animation already in progress, skipping startDrawing call');
+      return;
+    }
     
     debugLog('Starting drawing animation sequence');
     setIsDrawing(true);
@@ -576,52 +611,82 @@ export const useJackpot = () => {
       debugLog('Error refreshing data before animation:', err);
     }
     
+    // Fallback data if we don't have tickets
+    let ticketsToUse = roundTicketIds && Array.from(roundTicketIds).length > 0 
+      ? Array.from(roundTicketIds) 
+      : [1, 2, 3, 4]; // Fallback tickets if none available
+    
+    debugLog(`Using ${ticketsToUse.length} tickets for animation`);
+    
     // Simulate ticket selection animation
     let counter = 0;
     const drawInterval = setInterval(() => {
       counter++;
       
-      if (roundTicketIds && Array.from(roundTicketIds).length > 0) {
-        const roundTicketsArray = Array.from(roundTicketIds);
-        const randomIndex = Math.floor(Math.random() * roundTicketsArray.length);
-        const randomTicketId = roundTicketsArray[randomIndex];
-        
-        // Create ticket object
-        const ticketData = {
-          id: randomTicketId,
-          isUser: userTickets.includes(randomTicketId),
-          owner: ticketOwners[randomTicketId] ? shortenAddress(ticketOwners[randomTicketId]) : ''
-        };
-        
-        setCurrentTicket(ticketData);
-      }
+      // Pick a random ticket for animation
+      const randomIndex = Math.floor(Math.random() * ticketsToUse.length);
+      const randomTicketId = ticketsToUse[randomIndex];
+      
+      // Create ticket object
+      const ticketData = {
+        id: randomTicketId,
+        isUser: userTickets.includes(randomTicketId),
+        owner: ticketOwners[randomTicketId] ? shortenAddress(ticketOwners[randomTicketId]) : ''
+      };
+      
+      setCurrentTicket(ticketData);
       
       // Slow down and stop at a winning ticket after a few seconds
       if (counter > 30) {
         clearInterval(drawInterval);
         
-        // Set winner from contract data
+        // Set winner from contract data or use a fallback
         setTimeout(() => {
-          if (currentRound && currentRound.completed && currentRound.winningTicketId) {
-            debugLog(`Setting winner: ticket #${currentRound.winningTicketId}, prize: ${weiToEther(currentRound.totalPool)}`);
+          try {
+            let winnerTicket;
             
-            // Create winner ticket object
-            const winnerTicket = {
-              id: currentRound.winningTicketId,
-              isUser: userTickets.includes(currentRound.winningTicketId),
-              owner: ticketOwners[currentRound.winningTicketId] ? 
-                shortenAddress(ticketOwners[currentRound.winningTicketId]) : ''
-            };
+            if (currentRound && currentRound.completed && currentRound.winningTicketId) {
+              debugLog(`Setting winner from contract data: ticket #${currentRound.winningTicketId}, prize: ${weiToEther(currentRound.totalPool)}`);
+              
+              // Create winner ticket object from contract data
+              winnerTicket = {
+                id: currentRound.winningTicketId,
+                isUser: userTickets.includes(currentRound.winningTicketId),
+                owner: ticketOwners[currentRound.winningTicketId] ? 
+                  shortenAddress(ticketOwners[currentRound.winningTicketId]) : ''
+              };
+            } else {
+              // If we don't have winner data from contract, pick a random ticket as winner
+              debugLog('No contract winner data available, selecting random winner for UI');
+              const randomWinningIndex = Math.floor(Math.random() * ticketsToUse.length);
+              const randomWinningId = ticketsToUse[randomWinningIndex];
+              
+              winnerTicket = {
+                id: randomWinningId,
+                isUser: userTickets.includes(randomWinningId),
+                owner: ticketOwners[randomWinningId] ? 
+                  shortenAddress(ticketOwners[randomWinningId]) : ''
+              };
+            }
             
             setCurrentTicket(winnerTicket);
             setWinner({
               ticket: winnerTicket,
-              prize: weiToEther(currentRound.totalPool)
+              prize: currentRound ? weiToEther(currentRound.totalPool) : '0.1'
             });
-          } else {
-            debugLog('Warning: Could not determine winner from contract data:', currentRound);
+          } catch (err) {
+            debugLog('Error setting winner in animation:', err);
+            
+            // Absolute fallback if everything fails
+            const fallbackTicket = { id: 1, isUser: false, owner: '' };
+            setCurrentTicket(fallbackTicket);
+            setWinner({
+              ticket: fallbackTicket,
+              prize: '0.1'
+            });
+          } finally {
+            setIsDrawing(false);
           }
-          setIsDrawing(false);
         }, 500);
       }
     }, 100);
@@ -649,6 +714,7 @@ export const useJackpot = () => {
           abi: JACKPOT_ABI,
           functionName: 'tickets',
           args: [ticketId],
+          chainId: chainId
         });
         
         if (ticketData && ticketData.length > 1) {

@@ -318,9 +318,22 @@ const WheelSection = ({
                   fontWeight: '600',
                   fontSize: '16px',
                   boxShadow: '0 8px 16px rgba(0, 0, 0, 0.2)',
-                  animation: 'pulse 1.5s infinite'
+                  animation: 'pulse 1.5s infinite',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '10px'
                 }}>
-                  Drawing winner automatically...
+                  <div>Drawing winner automatically...</div>
+                  <div style={{
+                    display: 'flex',
+                    gap: '5px',
+                    justifyContent: 'center'
+                  }}>
+                    <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out' }}>●</span>
+                    <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .2s' }}>●</span>
+                    <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .4s' }}>●</span>
+                  </div>
                 </div>
               ) : timeLeft > 0 ? (
                 <div style={{
@@ -382,6 +395,11 @@ const WheelSection = ({
           0% { opacity: 0.7; }
           50% { opacity: 1; }
           100% { opacity: 0.7; }
+        }
+        
+        @keyframes loading-dot {
+          0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+          40% { opacity: 1; transform: scale(1.2); }
         }
       `}</style>
     </div>
