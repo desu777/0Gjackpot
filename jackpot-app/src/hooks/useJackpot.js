@@ -37,6 +37,10 @@ export const useJackpot = () => {
   const [isCompletingRound, setIsCompletingRound] = useState(false);
   const [drawnRounds, setDrawnRounds] = useState(new Set());
   
+  // New states for wallet-based drawing
+  const [participatingWallets, setParticipatingWallets] = useState([]);
+  const [isLoadingWallets, setIsLoadingWallets] = useState(false);
+  
   // Flag to prevent multiple round completion attempts
   const hasAttemptedAutoComplete = useRef(false);
   // Store drawn rounds in useRef to prevent animation reruns
@@ -657,7 +661,72 @@ export const useJackpot = () => {
     }
   }, [roundIdError, roundDataError, currentRoundInfoError, userTicketsError, roundTicketsError]);
   
-  // Enhanced startDrawing function to ensure it has the latest data
+  // Fetch participating wallets for the current round
+  const fetchParticipatingWallets = async () => {
+    if (!isConnected || !isCorrectChain || !jackpotAddress || !currentRound) return;
+    
+    setIsLoadingWallets(true);
+    
+    try {
+      debugLog('Fetching participating wallets data');
+      // Get tickets for the current round
+      const roundTickets = await readContract({
+        address: jackpotAddress,
+        abi: JACKPOT_ABI,
+        functionName: 'getRoundTickets',
+        args: [currentRound.id],
+        chainId
+      });
+      
+      // Get ticket owners
+      const owners = {};
+      const walletTicketCounts = {};
+      
+      for (const ticketId of roundTickets) {
+        const ticketData = await readContract({
+          address: jackpotAddress,
+          abi: JACKPOT_ABI,
+          functionName: 'tickets',
+          args: [ticketId],
+          chainId
+        });
+        
+        const ownerAddress = ticketData[1]; // Ticket owner
+        owners[ticketId] = ownerAddress;
+        
+        // Count tickets for each wallet
+        walletTicketCounts[ownerAddress] = (walletTicketCounts[ownerAddress] || 0) + 1;
+      }
+      
+      // Transform into array format for animation
+      const wallets = Object.entries(walletTicketCounts).map(([address, ticketCount]) => ({
+        address,
+        shortAddress: shortenAddress(address),
+        ticketCount,
+        // Win chance percentage proportional to ticket count
+        winChance: ((ticketCount / roundTickets.length) * 100).toFixed(1),
+        isCurrentUser: address.toLowerCase() === address?.toLowerCase()
+      }));
+      
+      debugLog(`Found ${wallets.length} participating wallets with tickets`);
+      setParticipatingWallets(wallets);
+      setTicketOwners(owners);
+    } catch (err) {
+      console.error('Error fetching wallet data:', err);
+    } finally {
+      setIsLoadingWallets(false);
+    }
+  };
+
+  // Add effect to start fetching wallet data before countdown ends
+  useEffect(() => {
+    if (timeLeft > 0 && timeLeft <= 5 && !isLoadingWallets && !participatingWallets.length && currentRound?.id) {
+      debugLog('Starting to fetch wallet data before countdown ends');
+      fetchParticipatingWallets();
+    }
+  }, [timeLeft, currentRound?.id]);
+
+  // Enhanced startDrawing function to use wallet-based animation
   const startDrawing = async () => {
     if (isDrawing || !currentRound || !currentRound.id) {
       debugLog('Cannot start drawing - drawing already in progress or no current round');
@@ -677,131 +746,91 @@ export const useJackpot = () => {
     // Add this round to the set of drawn rounds
     drawnRoundsRef.current.add(currentRound.id);
     
-    // Make direct contract calls for the latest round data
-    let directRoundData = null;
-    let directTicketIds = [];
+    // Use pre-fetched participating wallets or fetch them now if not available
+    let walletsForAnimation = participatingWallets;
     
-    try {
-      // Try to get round data directly
-      const effectiveChainId = chainId || 16601; // Use fallback if needed
-      
-      debugLog(`Making direct contract calls with chainId: ${effectiveChainId}`);
-      
-      directRoundData = await readContract({
-        address: jackpotAddress,
-        abi: JACKPOT_ABI,
-        functionName: 'rounds',
-        args: [currentRound.id],
-        chainId: effectiveChainId
-      });
-      
-      // Try to get ticket IDs directly
-      directTicketIds = await readContract({
-        address: jackpotAddress,
-        abi: JACKPOT_ABI,
-        functionName: 'getRoundTickets',
-        args: [currentRound.id],
-        chainId: effectiveChainId
-      });
-      
-      // Log the results of direct contract calls
-      debugLog(`Direct contract call results - Round ID: ${currentRound.id}, Completed: ${directRoundData[6]}, Winning ticket: ${directRoundData[5]}`);
-      debugLog(`Direct tickets retrieved: ${directTicketIds.length}`);
-    } catch (err) {
-      debugLog('Error making direct contract calls:', err);
-      // Continue with the existing data
+    if (!walletsForAnimation.length) {
+      debugLog('No wallet data available, fetching now...');
+      await fetchParticipatingWallets();
+      walletsForAnimation = participatingWallets;
     }
     
-    // Use multi-level fallback strategy for tickets
-    let ticketsToUse = [];
-    
-    if (directTicketIds && directTicketIds.length > 0) {
-      // First priority: Use directly retrieved tickets
-      ticketsToUse = Array.from(directTicketIds);
-      debugLog(`Using ${ticketsToUse.length} tickets from direct contract call`);
-    } else if (roundTicketIds && Array.from(roundTicketIds).length > 0) {
-      // Second priority: Use tickets from state
-      ticketsToUse = Array.from(roundTicketIds);
-      debugLog(`Using ${ticketsToUse.length} tickets from state`);
-    } else {
-      // Last resort: Use fallback tickets
-      ticketsToUse = [1, 2, 3, 4];
-      debugLog(`WARNING: Using ${ticketsToUse.length} FALLBACK tickets - NO ACTUAL BLOCKCHAIN DATA AVAILABLE`);
+    // If still no data, create fallback dataset
+    if (!walletsForAnimation.length) {
+      debugLog('WARNING: Using fallback data for animation!');
+      walletsForAnimation = [
+        { address: '0x1111...', shortAddress: '0x1111...', ticketCount: 1, winChance: 25, isCurrentUser: false },
+        { address: '0x2222...', shortAddress: '0x2222...', ticketCount: 1, winChance: 25, isCurrentUser: false },
+        { address: '0x3333...', shortAddress: '0x3333...', ticketCount: 1, winChance: 25, isCurrentUser: true },
+        { address: '0x4444...', shortAddress: '0x4444...', ticketCount: 1, winChance: 25, isCurrentUser: false }
+      ];
     }
     
-    // Simulate ticket selection animation
+    // Animation cycling through wallets
     let counter = 0;
     const drawInterval = setInterval(() => {
       counter++;
       
-      // Pick a random ticket for animation
-      const randomIndex = Math.floor(Math.random() * ticketsToUse.length);
-      const randomTicketId = ticketsToUse[randomIndex];
+      // Pick a random wallet for animation
+      const randomIndex = Math.floor(Math.random() * walletsForAnimation.length);
+      const randomWallet = walletsForAnimation[randomIndex];
       
-      // Create ticket object
-      const ticketData = {
-        id: randomTicketId,
-        isUser: userTickets.includes(randomTicketId),
-        owner: ticketOwners[randomTicketId] ? shortenAddress(ticketOwners[randomTicketId]) : ''
-      };
+      // Update current selection
+      setCurrentTicket({
+        id: null, // We don't need ticket ID in wallet-based animation
+        address: randomWallet.address,
+        shortAddress: randomWallet.shortAddress,
+        isUser: randomWallet.isCurrentUser,
+        ticketCount: randomWallet.ticketCount,
+        winChance: randomWallet.winChance
+      });
       
-      setCurrentTicket(ticketData);
-      
-      // Slow down and stop at a winning ticket after a few seconds
+      // Slow down and stop after enough cycles
       if (counter > 30) {
         clearInterval(drawInterval);
         
-        // Set winner from contract data or use a fallback
-        setTimeout(() => {
+        // Get winner from contract
+        setTimeout(async () => {
           try {
-            let winnerTicket;
+            // Make direct contract calls for the latest round data
+            const effectiveChainId = chainId || 16601; // Use fallback if needed
             
-            // Try multiple sources for winner data, in order of reliability
-            if (directRoundData && directRoundData[6] && directRoundData[5]) {
-              // 1. Use directly retrieved round data (most reliable)
-              const winningId = Number(directRoundData[5]);
-              debugLog(`Setting winner from direct contract data: ticket #${winningId}`);
-              
-              winnerTicket = {
-                id: winningId,
-                isUser: userTickets.includes(winningId),
-                owner: ticketOwners[winningId] ? shortenAddress(ticketOwners[winningId]) : ''
-              };
-            } else if (currentRound && currentRound.completed && currentRound.winningTicketId) {
-              // 2. Use state data if available
-              debugLog(`Setting winner from state data: ticket #${currentRound.winningTicketId}, prize: ${weiToEther(currentRound.totalPool)}`);
-              
-              // Create winner ticket object from contract data
-              winnerTicket = {
-                id: currentRound.winningTicketId,
-                isUser: userTickets.includes(currentRound.winningTicketId),
-                owner: ticketOwners[currentRound.winningTicketId] ? 
-                  shortenAddress(ticketOwners[currentRound.winningTicketId]) : ''
-              };
-            } else if (ticketsToUse.length > 0) {
-              // 3. If no winner data available, select from actual tickets (better fallback)
-              debugLog('No contract winner data available, selecting from available tickets');
-              
-              const randomWinningIndex = Math.floor(Math.random() * ticketsToUse.length);
-              const randomWinningId = ticketsToUse[randomWinningIndex];
-              
-              winnerTicket = {
-                id: randomWinningId,
-                isUser: userTickets.includes(randomWinningId),
-                owner: ticketOwners[randomWinningId] ? 
-                  shortenAddress(ticketOwners[randomWinningId]) : ''
-              };
-            } else {
-              // 4. Absolute last resort fallback
-              debugLog('CRITICAL: No tickets available, using last resort fallback winner');
-              
-              const fallbackTicket = { id: 1, isUser: false, owner: '' };
-              winnerTicket = fallbackTicket;
-            }
+            debugLog(`Making direct contract calls with chainId: ${effectiveChainId}`);
             
-            setCurrentTicket(winnerTicket);
+            const roundData = await readContract({
+              address: jackpotAddress,
+              abi: JACKPOT_ABI,
+              functionName: 'rounds',
+              args: [currentRound.id],
+              chainId: effectiveChainId
+            });
+            
+            const winnerAddress = roundData[4]; // Winner address
+            const winningTicketId = Number(roundData[5]); // Winning ticket ID
+            
+            // Find winner wallet information
+            const winnerWallet = walletsForAnimation.find(w => 
+              w.address.toLowerCase() === winnerAddress.toLowerCase()
+            ) || {
+              address: winnerAddress,
+              shortAddress: shortenAddress(winnerAddress),
+              isCurrentUser: winnerAddress.toLowerCase() === address?.toLowerCase(),
+              ticketCount: 1,
+              winChance: '?'
+            };
+            
+            // Show winner
+            setCurrentTicket({
+              id: winningTicketId,
+              address: winnerWallet.address,
+              shortAddress: winnerWallet.shortAddress,
+              isUser: winnerWallet.isCurrentUser,
+              ticketCount: winnerWallet.ticketCount
+            });
+            
             setWinner({
-              ticket: winnerTicket,
+              wallet: winnerWallet,
+              ticket: { id: winningTicketId },
               prize: currentRound ? weiToEther(currentRound.totalPool) : '0.1'
             });
           } catch (err) {
@@ -809,8 +838,17 @@ export const useJackpot = () => {
             
             // Absolute fallback if everything fails
             const fallbackTicket = { id: 1, isUser: false, owner: '' };
+            const fallbackWallet = { 
+              address: '0x0000...', 
+              shortAddress: '0x0000...', 
+              isCurrentUser: false,
+              ticketCount: 1,
+              winChance: '?'
+            };
+            
             setCurrentTicket(fallbackTicket);
             setWinner({
+              wallet: fallbackWallet,
               ticket: fallbackTicket,
               prize: '0.1'
             });
@@ -922,6 +960,11 @@ export const useJackpot = () => {
     // Add ticket owners data
     ticketOwners,
     getTicketOwners,
-    shortenAddress
+    shortenAddress,
+    
+    // New wallet-based drawing properties
+    participatingWallets,
+    isLoadingWallets,
+    fetchParticipatingWallets
   };
 }; 

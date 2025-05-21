@@ -13,7 +13,8 @@ const WheelSection = ({
   formatTime,
   startDrawing,
   completeRound,
-  mockTickets = [] // Add this prop to access the actual tickets
+  participatingWallets = [], // Replace mockTickets with participatingWallets
+  isLoadingWallets = false // Add loading state for wallets
 }) => {
   // Add confetti state
   const [showConfetti, setShowConfetti] = useState(false);
@@ -27,20 +28,23 @@ const WheelSection = ({
   const [rotationSpeed, setRotationSpeed] = useState(2);
   const [wheelRotation, setWheelRotation] = useState(0);
   
-  // Use actual tickets for wheel segments
-  const tickets = useMemo(() => mockTickets, [mockTickets]);
+  // Create wheel segments from participating wallets
   const [wheelSegments, setWheelSegments] = useState([]);
   
-  // Odśwież segmenty gdy zmienią się bilety rundy
+  // Create wheel segments when wallets change
   useEffect(() => {
-    if (!mockTickets?.length) return;
+    if (!participatingWallets?.length) return;
 
-    const segments = mockTickets.map((t, i) => ({
-      id: t.id,
-      color: i % 2 === 0 ? theme.accent.primary : theme.accent.secondary
+    const segments = participatingWallets.map((wallet, i) => ({
+      address: wallet.address,
+      shortAddress: wallet.shortAddress,
+      ticketCount: wallet.ticketCount,
+      winChance: wallet.winChance,
+      isCurrentUser: wallet.isCurrentUser,
+      color: wallet.isCurrentUser ? theme.accent.secondary : (i % 2 === 0 ? theme.accent.primary : '#00B897')
     }));
     setWheelSegments(segments);
-  }, [mockTickets]);
+  }, [participatingWallets]);
   
   // Update window size when component mounts
   useEffect(() => {
@@ -71,18 +75,19 @@ const WheelSection = ({
     }
   }, [winner]);
 
-  // Help animation to stop exactly on the winner
+  // Help animation to stop on the winner wallet
   useEffect(() => {
-    if (!winner) return;
+    if (!winner || !wheelSegments.length) return;
 
-    const idx = wheelSegments.findIndex(s => s.id === winner.ticket.id);
+    // Find the winning wallet segment
+    const idx = wheelSegments.findIndex(s => s.address.toLowerCase() === winner.wallet.address.toLowerCase());
     if (idx === -1) return;
 
-    const rotations = 5;            // pełne obroty
+    const rotations = 5;            // full rotations
     const degPerSegment = 360 / wheelSegments.length;
     const targetDeg = rotations * 360 + idx * degPerSegment;
 
-    // CSS-em
+    // Apply CSS transition
     const wheel = document.getElementById('wheel-spinning');
     if (wheel) {
       wheel.style.transition = 'transform 4s cubic-bezier(0.25,0.1,0.25,1)';
@@ -196,7 +201,7 @@ const WheelSection = ({
                 height: '100%'
               }}
             >
-              {/* Wheel segments */}
+              {/* Wallet-based wheel segments */}
               {wheelSegments.map((segment, i) => (
                 <div key={i} style={{
                   position: 'absolute',
@@ -217,21 +222,32 @@ const WheelSection = ({
                   }} />
                   <div style={{
                     position: 'absolute',
-                    fontSize: '14px',
+                    fontSize: '12px',
                     fontWeight: 'bold',
                     top: '20px',
-                    right: '35%',
+                    right: '28%',
                     color: 'white',
                     transform: 'rotate(-90deg)',
                     textShadow: `0 0 5px ${segment.color}`
                   }}>
-                    #{segment.id}
+                    <div>{segment.shortAddress}</div>
+                    <div style={{ fontSize: '10px', opacity: 0.8 }}>
+                      {segment.ticketCount} ticket{segment.ticketCount !== 1 ? 's' : ''}
+                    </div>
+                    <div style={{ fontSize: '9px' }}>
+                      {segment.winChance}% chance
+                    </div>
+                    {segment.isCurrentUser && (
+                      <div style={{ fontSize: '9px', color: '#FF5CAA', fontWeight: 'bold' }}>
+                        YOU
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           ) : winner ? (
-            // Winner display
+            // Winner display - updated for wallet display
             <div style={{
               display: 'flex',
               flexDirection: 'column',
@@ -251,16 +267,20 @@ const WheelSection = ({
                 Winner!
               </div>
               <div style={{
-                backgroundColor: winner?.ticket?.isUser ? theme.accent.secondary : 'rgba(60, 75, 95, 0.5)',
+                backgroundColor: winner?.wallet?.isCurrentUser ? theme.accent.secondary : 'rgba(60, 75, 95, 0.5)',
                 color: 'white',
                 padding: '15px 25px',
                 borderRadius: '12px',
-                fontSize: '24px',
+                fontSize: '20px',
                 fontWeight: 'bold',
-                boxShadow: `0 0 20px ${winner?.ticket?.isUser ? theme.accent.secondary : 'rgba(60, 75, 95, 0.3)'}`,
-                animation: 'scale-in 0.5s ease-out'
+                boxShadow: `0 0 20px ${winner?.wallet?.isCurrentUser ? theme.accent.secondary : 'rgba(60, 75, 95, 0.3)'}`,
+                animation: 'scale-in 0.5s ease-out',
+                textAlign: 'center'
               }}>
-                #{winner?.ticket?.id}
+                {winner?.wallet?.shortAddress}
+                <div style={{ fontSize: '14px', marginTop: '5px' }}>
+                  Ticket #{winner?.ticket?.id}
+                </div>
               </div>
               <div style={{
                 color: theme.text.primary,
@@ -269,7 +289,7 @@ const WheelSection = ({
               }}>
                 Prize: <span style={{ fontWeight: 'bold', color: '#00B897' }}>{winner?.prize} 0G</span>
               </div>
-              {winner?.ticket?.isUser && (
+              {winner?.wallet?.isCurrentUser && (
                 <div style={{
                   marginTop: '15px',
                   color: theme.accent.secondary,
@@ -277,12 +297,12 @@ const WheelSection = ({
                   fontSize: '20px',
                   animation: 'pulse 1.5s infinite'
                 }}>
-                  🎉 Congratulations! Your ticket won! 🎉
+                  🎉 Congratulations! You won! 🎉
                 </div>
               )}
             </div>
           ) : (
-            // Countdown display
+            // Countdown display - updated to show loading state for wallets
             <div style={{
               display: 'flex',
               flexDirection: 'column',
@@ -324,16 +344,33 @@ const WheelSection = ({
                   alignItems: 'center',
                   gap: '10px'
                 }}>
-                  <div>Drawing winner automatically...</div>
-                  <div style={{
-                    display: 'flex',
-                    gap: '5px',
-                    justifyContent: 'center'
-                  }}>
-                    <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out' }}>●</span>
-                    <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .2s' }}>●</span>
-                    <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .4s' }}>●</span>
-                  </div>
+                  {isLoadingWallets ? (
+                    <>
+                      <div>Preparing drawing...</div>
+                      <div style={{
+                        display: 'flex',
+                        gap: '5px',
+                        justifyContent: 'center'
+                      }}>
+                        <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out' }}>●</span>
+                        <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .2s' }}>●</span>
+                        <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .4s' }}>●</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>Drawing winner...</div>
+                      <div style={{
+                        display: 'flex',
+                        gap: '5px',
+                        justifyContent: 'center'
+                      }}>
+                        <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out' }}>●</span>
+                        <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .2s' }}>●</span>
+                        <span style={{ animation: 'loading-dot 1.4s infinite ease-in-out .4s' }}>●</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : timeLeft > 0 ? (
                 <div style={{
@@ -362,7 +399,7 @@ const WheelSection = ({
         </div>
       </div>
       
-      {/* Current selected ticket display */}
+      {/* Current selected wallet display */}
       {isDrawing && currentTicket && (
         <div style={{
           display: 'flex',
@@ -379,7 +416,13 @@ const WheelSection = ({
             fontWeight: 'bold',
             animation: 'pulse 0.5s infinite'
           }}>
-            Ticket #{currentTicket.id}
+            {currentTicket.shortAddress || currentTicket.owner}
+            {currentTicket.isUser && <span style={{ marginLeft: '5px', color: '#FF5CAA' }}>(YOU)</span>}
+            {currentTicket.ticketCount && (
+              <span style={{ marginLeft: '10px', fontSize: '14px', opacity: 0.8 }}>
+                {currentTicket.ticketCount} ticket{currentTicket.ticketCount !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -395,6 +438,16 @@ const WheelSection = ({
         @keyframes loading-dot {
           0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
           40% { opacity: 1; transform: scale(1.2); }
+        }
+        
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes scale-in {
+          from { transform: scale(0.9); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
         }
       `}</style>
     </div>

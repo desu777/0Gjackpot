@@ -69,6 +69,33 @@ const WinnerNotification = ({ winner, onClose, duration = 10000 }) => {
         🎉 Winner Announcement! 🎉
       </h2>
       
+      {/* Winning Wallet Display */}
+      <div style={{
+        marginBottom: '20px',
+        padding: '15px',
+        backgroundColor: 'rgba(0, 210, 233, 0.1)',
+        borderRadius: '15px',
+        border: '1px solid rgba(0, 210, 233, 0.5)'
+      }}>
+        <div style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: '10px' }}>
+          Winning Wallet
+        </div>
+        <div style={{
+          fontSize: '22px',
+          fontWeight: 'bold',
+          color: '#00D2E9',
+          wordBreak: 'break-all'
+        }}>
+          {winner.wallet ? winner.wallet.address : winner.ticket.owner}
+          {winner.wallet && winner.wallet.isCurrentUser && (
+            <div style={{ fontSize: '16px', marginTop: '5px', color: '#FF5CAA' }}>
+              🎉 This is your wallet! 🎉
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Winning Ticket Display */}
       <div style={{
         marginBottom: '20px',
         padding: '15px',
@@ -80,7 +107,7 @@ const WinnerNotification = ({ winner, onClose, duration = 10000 }) => {
           Winning Ticket
         </div>
         <div style={{
-          fontSize: '36px',
+          fontSize: '32px',
           fontWeight: 'bold',
           color: '#FF5CAA'
         }}>
@@ -88,6 +115,7 @@ const WinnerNotification = ({ winner, onClose, duration = 10000 }) => {
         </div>
       </div>
       
+      {/* Prize Amount Display */}
       <div style={{
         marginBottom: '25px',
         padding: '15px',
@@ -106,28 +134,6 @@ const WinnerNotification = ({ winner, onClose, duration = 10000 }) => {
           {winner.prize} 0G
         </div>
       </div>
-      
-      {winner.ticket.owner && (
-        <div style={{
-          marginBottom: '25px',
-          padding: '15px',
-          backgroundColor: 'rgba(0, 210, 233, 0.1)',
-          borderRadius: '15px',
-          border: '1px solid rgba(0, 210, 233, 0.5)'
-        }}>
-          <div style={{ fontSize: '16px', color: 'rgba(255, 255, 255, 0.6)', marginBottom: '10px' }}>
-            Winner Address
-          </div>
-          <div style={{
-            fontSize: '20px',
-            fontWeight: 'bold',
-            color: '#00D2E9',
-            wordBreak: 'break-all'
-          }}>
-            {winner.ticket.owner}
-          </div>
-        </div>
-      )}
       
       <button
         onClick={() => {

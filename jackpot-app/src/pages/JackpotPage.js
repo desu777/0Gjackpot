@@ -53,7 +53,12 @@ const JackpotPage = () => {
     isRefreshing,
     refreshCount,
     ticketOwners,
-    shortenAddress
+    shortenAddress,
+    
+    // Include new wallet-based drawing properties
+    participatingWallets,
+    isLoadingWallets,
+    fetchParticipatingWallets
   } = useJackpot();
   
   // Get history contract data
@@ -112,7 +117,8 @@ const JackpotPage = () => {
     jackpotData,
     isCorrectChain,
     address,
-    isBuyingAllowed
+    isBuyingAllowed,
+    participatingWallets // Log participating wallets for debugging
   });
   
   // Generate ticket objects
@@ -157,7 +163,7 @@ const JackpotPage = () => {
             winner={winner}
             setActiveView={setActiveView}
             setTimeLeft={handleSetTimeLeft}
-            startDrawing={null}
+            startDrawing={startDrawing}
             formatTime={formatTime}
             isCorrectChain={isCorrectChain}
             buyTickets={handleBuyTickets}
@@ -172,6 +178,8 @@ const JackpotPage = () => {
             ticketOwners={ticketOwners}
             shortenAddress={shortenAddress}
             roundTickets={roundTickets}
+            participatingWallets={participatingWallets}
+            isLoadingWallets={isLoadingWallets}
           />
         )}
       </MainLayout>

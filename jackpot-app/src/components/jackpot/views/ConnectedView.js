@@ -29,7 +29,9 @@ const ConnectedView = ({
   isRefreshing,
   ticketOwners,
   shortenAddress,
-  roundTickets
+  roundTickets,
+  participatingWallets,
+  isLoadingWallets
 }) => {
   const { openChainModal } = useChainModal();
   
@@ -140,7 +142,8 @@ const ConnectedView = ({
           formatTime={formatTime}
           startDrawing={startDrawing}
           completeRound={completeRound}
-          mockTickets={mockTickets}
+          participatingWallets={participatingWallets}
+          isLoadingWallets={isLoadingWallets}
         />
       </div>
       
