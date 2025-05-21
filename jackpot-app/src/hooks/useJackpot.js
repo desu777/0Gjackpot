@@ -4,6 +4,7 @@ import { parseEther } from 'viem';
 import { formatAddress, weiToEther, formatTimestamp, getContractAddresses } from '../config/envConfig';
 import { JACKPOT_ABI } from '../config/contractConfig';
 import { readContract } from 'wagmi/actions';
+import { useAdminWallet } from './useAdminWallet';
 
 /**
  * Hook for interacting with the Jackpot contract
@@ -29,6 +30,9 @@ export const useJackpot = () => {
   // Constants
   const MIN_PAYMENT = 0.02; // Minimum payment to start the countdown
   const LOCK_PERIOD = 5; // Seconds before end when buying is disabled
+  
+  // Admin wallet integration
+  const { completeRoundWithAdmin } = useAdminWallet();
   
   // Wallet connection
   const { address, isConnected } = useAccount();
@@ -386,20 +390,41 @@ export const useJackpot = () => {
         const newTimeLeft = Math.max(0, timeLeft - 1);
         setTimeLeft(newTimeLeft);
         
-        // When timer reaches zero, automatically trigger completeRound
+        // When timer reaches zero, automatically trigger completeRound with admin wallet
         if (newTimeLeft === 0 && currentRound && !currentRound.completed) {
-          console.log('Countdown reached zero - automatically completing round');
+          console.log('Countdown reached zero - automatically completing round with admin wallet');
           addNotification({
             type: 'info',
             message: 'Countdown ended! Drawing winner automatically...'
           });
-          completeRound();
+          
+          // Use admin wallet to complete the round
+          completeRoundWithAdmin()
+            .then(result => {
+              if (result.success) {
+                addNotification({
+                  type: 'success',
+                  message: 'Round completed successfully!',
+                  txHash: result.txHash
+                });
+                
+                // Start the drawing animation after a delay
+                setTimeout(() => {
+                  startDrawing();
+                }, 2000);
+              } else {
+                addNotification({
+                  type: 'error',
+                  message: `Failed to complete round: ${result.error}`
+                });
+              }
+            });
         }
       }, 1000);
     }
     
     return () => clearInterval(interval);
-  }, [timeLeft, currentRound]);
+  }, [timeLeft, currentRound, completeRoundWithAdmin]);
   
   // Format time display
   const formatTime = (seconds) => {
@@ -454,11 +479,62 @@ export const useJackpot = () => {
   }, [roundIdError, roundDataError, currentRoundInfoError, userTicketsError, roundTicketsError]);
   
   const startDrawing = () => {
-    // Implementation of startDrawing function
+    if (isDrawing) return;
+    
+    setIsDrawing(true);
+    setWinner(null);
+    
+    // Simulate ticket selection animation
+    let counter = 0;
+    const drawInterval = setInterval(() => {
+      counter++;
+      
+      if (roundTicketIds && Array.from(roundTicketIds).length > 0) {
+        const roundTicketsArray = Array.from(roundTicketIds);
+        const randomIndex = Math.floor(Math.random() * roundTicketsArray.length);
+        const randomTicketId = roundTicketsArray[randomIndex];
+        
+        // Create ticket object
+        const ticketData = {
+          id: randomTicketId,
+          isUser: userTickets.includes(randomTicketId),
+          owner: ticketOwners[randomTicketId] ? shortenAddress(ticketOwners[randomTicketId]) : ''
+        };
+        
+        setCurrentTicket(ticketData);
+      }
+      
+      // Slow down and stop at a winning ticket after a few seconds
+      if (counter > 30) {
+        clearInterval(drawInterval);
+        
+        // Set winner from contract data
+        setTimeout(() => {
+          if (currentRound && currentRound.completed && currentRound.winningTicketId) {
+            // Create winner ticket object
+            const winnerTicket = {
+              id: currentRound.winningTicketId,
+              isUser: userTickets.includes(currentRound.winningTicketId),
+              owner: ticketOwners[currentRound.winningTicketId] ? 
+                shortenAddress(ticketOwners[currentRound.winningTicketId]) : ''
+            };
+            
+            setCurrentTicket(winnerTicket);
+            setWinner({
+              ticket: winnerTicket,
+              prize: weiToEther(currentRound.totalPool)
+            });
+          }
+          setIsDrawing(false);
+        }, 500);
+      }
+    }, 100);
   };
   
   const resetDrawingState = () => {
-    // Implementation of resetDrawingState function
+    setIsDrawing(false);
+    setCurrentTicket(null);
+    setWinner(null);
   };
   
   // Function to get ticket owner addresses

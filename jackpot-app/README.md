@@ -1,74 +1,98 @@
-# Galileo Jackpot Frontend
+# 0G Jackpot App
 
-Frontend application for the Galileo Jackpot lottery system.
+A decentralized lottery application built on the 0G Galileo Testnet. Users can purchase tickets for a chance to win the jackpot. When the countdown timer reaches zero, a random winner is automatically selected.
 
-## Project Structure
+## Features
 
+- Connect your wallet and purchase tickets
+- Real-time updates of the pool size and time remaining
+- Automatic drawing when the countdown reaches zero
+- Visual wheel animation for the drawing process
+- Winner notification with confetti celebration
+- History of past winners
+
+## Setup Instructions
+
+### Prerequisites
+
+- Node.js (v14.0.0 or later)
+- npm or yarn
+- MetaMask or another web3 wallet
+- Access to the 0G Galileo Testnet
+
+### Installation
+
+1. Clone the repository
 ```
-src/
-├── components/
-│   ├── jackpot/
-│   │   ├── theme/
-│   │   │   └── ThemeConfig.js
-│   │   ├── layout/
-│   │   │   ├── Header.js
-│   │   │   ├── Footer.js
-│   │   │   └── MainLayout.js
-│   │   ├── views/
-│   │   │   ├── LandingView.js
-│   │   │   └── ConnectedView.js
-│   │   ├── panels/
-│   │   │   ├── InfoPanel.js
-│   │   │   ├── WheelSection.js
-│   │   │   ├── BuyPanel.js
-│   │   │   └── HistoryPanel.js
-│   │   └── animations/
-│   │       └── GlobalStyles.js
-├── pages/
-│   └── JackpotPage.js
-├── App.js
-└── index.js
+git clone <repository-url>
+cd jackpot-app
 ```
 
-## Component Breakdown
+2. Install dependencies
+```
+npm install
+```
 
-### Theme
-- **ThemeConfig.js** - Contains the UI theme configuration (colors, etc.)
+3. Create a `.env` file in the root directory with the following variables:
+```
+# Chain Configuration
+REACT_APP_CHAIN=OG-Galileo-Testnet
+REACT_APP_CHAIN_ID=16601
+REACT_APP_SYMBOL=OG
+REACT_APP_RPC=https://evmrpc-testnet.0g.ai
+REACT_APP_EXPLORER=https://chainscan-galileo.0g.ai/
 
-### Layout Components
-- **Header.js** - App header with logo and wallet connection
-- **Footer.js** - App footer
-- **MainLayout.js** - Main layout wrapper
+# Contract Addresses
+REACT_APP_JACKPOT_CONTRACT=0x...  # Your deployed contract address
+REACT_APP_HISTORY_CONTRACT=0x...   # Your deployed history contract address
 
-### View Components
-- **LandingView.js** - Landing page view when wallet is not connected
-- **ConnectedView.js** - Main view when wallet is connected
+# Admin Wallet (for automatic round completion)
+REACT_APP_ADMIN_PRIVATE_KEY=your_private_key_here
+```
 
-### Panel Components
-- **InfoPanel.js** - Displays round information and statistics
-- **WheelSection.js** - Drawing wheel animation and timer
-- **BuyPanel.js** - Panel for buying lottery tickets
-- **HistoryPanel.js** - Displays round history
+> **IMPORTANT**: The admin private key should be from a dedicated wallet used only for this purpose. DO NOT use your personal wallet's private key!
 
-### Animation
-- **GlobalStyles.js** - Global styles and animations
+4. Start the development server
+```
+npm start
+```
 
-## Pages
-- **JackpotPage.js** - Main page that holds the state and logic
+## Admin Wallet Setup
 
-## Setup and Run
+The application uses an admin wallet to automatically complete rounds when the timer reaches zero. This ensures that the game continues smoothly without requiring user intervention to trigger the drawing.
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+To set up the admin wallet:
 
-2. Start the development server:
-   ```bash
-   npm start
-   ```
+1. Create a new wallet specifically for this purpose (do not use your personal wallet)
+2. Fund the wallet with enough 0G tokens to cover gas fees for transactions
+3. Add the private key to your `.env` file as `REACT_APP_ADMIN_PRIVATE_KEY`
+4. Make sure this wallet has permission to call the `completeRound` function on the contract
 
-3. Build for production:
-   ```bash
-   npm run build
-   ``` 
+## Smart Contract Interaction
+
+The app interacts with two main contracts:
+
+1. **GalileoJackpot**: Handles the core lottery functionality including ticket purchases, round management, and winner selection
+2. **GalileoJackpotHistory**: Stores the history of previous winners for display in the UI
+
+## Production Deployment
+
+For production deployment:
+
+1. Build the production version
+```
+npm run build
+```
+
+2. Deploy the contents of the `build` directory to your web server
+
+## Security Considerations
+
+- Always use a dedicated wallet for the admin functionality
+- Store the private key securely
+- Consider using a key management service for production deployments
+- Regularly rotate the admin wallet key
+
+## License
+
+[MIT License](LICENSE) 

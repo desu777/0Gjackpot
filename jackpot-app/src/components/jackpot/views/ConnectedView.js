@@ -140,62 +140,6 @@ const ConnectedView = ({
           startDrawing={startDrawing}
           completeRound={completeRound}
         />
-        
-        {/* Demo controls */}
-        <div style={{
-          backgroundColor: 'rgba(25, 30, 40, 0.7)',
-          borderRadius: '12px',
-          padding: '16px',
-          display: 'flex',
-          justifyContent: 'center',
-          gap: '12px'
-        }}>
-          <button
-            onClick={() => setActiveView('landing')}
-            style={{
-              padding: '10px 16px',
-              backgroundColor: 'rgba(15, 20, 30, 0.8)',
-              border: '1px solid rgba(60, 75, 95, 0.5)',
-              borderRadius: '8px',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Show Landing Page
-          </button>
-          
-          <button
-            onClick={() => setTimeLeft(10)}
-            style={{
-              padding: '10px 16px',
-              backgroundColor: 'rgba(15, 20, 30, 0.8)',
-              border: '1px solid rgba(60, 75, 95, 0.5)',
-              borderRadius: '8px',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Prepare Drawing (10s)
-          </button>
-          
-          <button
-            onClick={startDrawing}
-            style={{
-              padding: '10px 16px',
-              backgroundColor: 'rgba(15, 20, 30, 0.8)',
-              border: '1px solid rgba(60, 75, 95, 0.5)',
-              borderRadius: '8px',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-            disabled={isDrawing}
-          >
-            Start Drawing
-          </button>
-        </div>
       </div>
       
       {/* Right column */}
