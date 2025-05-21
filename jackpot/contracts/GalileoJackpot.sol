@@ -265,6 +265,59 @@ contract GalileoJackpot is Ownable, ReentrancyGuard {
     }
     
     /**
+     * @dev Get participants and their ticket counts for a specific round
+     * @param roundId Round ID
+     * @return participants Array of participant addresses
+     * @return ticketCounts Array of ticket counts corresponding to participants
+     */
+    function getRoundParticipantsWithCounts(uint256 roundId) external view returns (address[] memory participants, uint256[] memory ticketCounts) {
+        uint256[] memory ticketIds = roundTickets[roundId];
+        
+        if (ticketIds.length == 0) {
+            return (new address[](0), new uint256[](0));
+        }
+        
+        // First pass: count unique addresses
+        uint256 maxUniqueAddresses = ticketIds.length;
+        address[] memory tempAddresses = new address[](maxUniqueAddresses);
+        uint256[] memory tempCounts = new uint256[](maxUniqueAddresses);
+        uint256 uniqueCount = 0;
+        
+        for (uint256 i = 0; i < ticketIds.length; i++) {
+            address owner = tickets[ticketIds[i]].owner;
+            bool found = false;
+            
+            // Check if we've already seen this address
+            for (uint256 j = 0; j < uniqueCount; j++) {
+                if (tempAddresses[j] == owner) {
+                    tempCounts[j]++;
+                    found = true;
+                    break;
+                }
+            }
+            
+            // If not found, add it to our arrays
+            if (!found) {
+                tempAddresses[uniqueCount] = owner;
+                tempCounts[uniqueCount] = 1;
+                uniqueCount++;
+            }
+        }
+        
+        // Create result arrays with exact size
+        participants = new address[](uniqueCount);
+        ticketCounts = new uint256[](uniqueCount);
+        
+        // Copy data to properly sized arrays
+        for (uint256 i = 0; i < uniqueCount; i++) {
+            participants[i] = tempAddresses[i];
+            ticketCounts[i] = tempCounts[i];
+        }
+        
+        return (participants, ticketCounts);
+    }
+    
+    /**
      * @dev Get current round information
      * @return id Round ID
      * @return startTime Start time
@@ -416,4 +469,4 @@ contract GalileoJackpot is Ownable, ReentrancyGuard {
         emit OwnerFeeCollected(round.id, treasury, ownerFee);
         emit RoundCompleted(round.id, winner, winningTicketId, prizeAmount);
     }
-} 
+}
