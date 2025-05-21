@@ -145,26 +145,45 @@ export const useJackpot = () => {
     try {
       // Ensure chainId is explicitly passed to prevent the "Cannot destructure property 'chainId'" error
       if (!chainId) {
-        console.warn('ChainId is undefined, skipping pool data refresh');
-        return;
-      }
-      
-      const result = await readContract({
-        address: jackpotAddress,
-        abi: JACKPOT_ABI,
-        functionName: 'getCurrentRoundInfo',
-        chainId: chainId // Explicitly pass chainId to prevent errors
-      });
-      
-      if (result && result.length > 3) {
-        // Update only pool data and numTickets, but not timeLeft (handled by blockchain timer)
-        setCurrentRound(prev => prev ? ({
-          ...prev,
-          totalPool: result[3].toString(),
-          numTickets: Number(result[4])
-        }) : null);
+        console.warn('ChainId is undefined, using default Galileo Testnet ID (16601)');
+        // Use fallback chainId for Galileo Testnet
+        const defaultChainId = 16601;
         
-        console.log(`Pool value updated: ${result[3].toString()}, Tickets: ${result[4]}`);
+        const result = await readContract({
+          address: jackpotAddress,
+          abi: JACKPOT_ABI,
+          functionName: 'getCurrentRoundInfo',
+          chainId: defaultChainId
+        });
+        
+        if (result && result.length > 3) {
+          // Update only pool data and numTickets, but not timeLeft (handled by blockchain timer)
+          setCurrentRound(prev => prev ? ({
+            ...prev,
+            totalPool: result[3].toString(),
+            numTickets: Number(result[4])
+          }) : null);
+          
+          console.log(`Pool value updated: ${result[3].toString()}, Tickets: ${result[4]}`);
+        }
+      } else {
+        const result = await readContract({
+          address: jackpotAddress,
+          abi: JACKPOT_ABI,
+          functionName: 'getCurrentRoundInfo',
+          chainId: chainId // Explicitly pass chainId to prevent errors
+        });
+        
+        if (result && result.length > 3) {
+          // Update only pool data and numTickets, but not timeLeft (handled by blockchain timer)
+          setCurrentRound(prev => prev ? ({
+            ...prev,
+            totalPool: result[3].toString(),
+            numTickets: Number(result[4])
+          }) : null);
+          
+          console.log(`Pool value updated: ${result[3].toString()}, Tickets: ${result[4]}`);
+        }
       }
     } catch (err) {
       console.error('Error refreshing pool data:', err);
@@ -658,20 +677,57 @@ export const useJackpot = () => {
     // Add this round to the set of drawn rounds
     drawnRoundsRef.current.add(currentRound.id);
     
-    // Make sure we have the latest data before starting animation
+    // Make direct contract calls for the latest round data
+    let directRoundData = null;
+    let directTicketIds = [];
+    
     try {
-      debugLog('Refreshing data before animation');
-      await refreshAllData();
+      // Try to get round data directly
+      const effectiveChainId = chainId || 16601; // Use fallback if needed
+      
+      debugLog(`Making direct contract calls with chainId: ${effectiveChainId}`);
+      
+      directRoundData = await readContract({
+        address: jackpotAddress,
+        abi: JACKPOT_ABI,
+        functionName: 'rounds',
+        args: [currentRound.id],
+        chainId: effectiveChainId
+      });
+      
+      // Try to get ticket IDs directly
+      directTicketIds = await readContract({
+        address: jackpotAddress,
+        abi: JACKPOT_ABI,
+        functionName: 'getRoundTickets',
+        args: [currentRound.id],
+        chainId: effectiveChainId
+      });
+      
+      // Log the results of direct contract calls
+      debugLog(`Direct contract call results - Round ID: ${currentRound.id}, Completed: ${directRoundData[6]}, Winning ticket: ${directRoundData[5]}`);
+      debugLog(`Direct tickets retrieved: ${directTicketIds.length}`);
     } catch (err) {
-      debugLog('Error refreshing data before animation:', err);
+      debugLog('Error making direct contract calls:', err);
+      // Continue with the existing data
     }
     
-    // Fallback data if we don't have tickets
-    let ticketsToUse = roundTicketIds && Array.from(roundTicketIds).length > 0 
-      ? Array.from(roundTicketIds) 
-      : [1, 2, 3, 4]; // Fallback tickets if none available
+    // Use multi-level fallback strategy for tickets
+    let ticketsToUse = [];
     
-    debugLog(`Using ${ticketsToUse.length} tickets for animation`);
+    if (directTicketIds && directTicketIds.length > 0) {
+      // First priority: Use directly retrieved tickets
+      ticketsToUse = Array.from(directTicketIds);
+      debugLog(`Using ${ticketsToUse.length} tickets from direct contract call`);
+    } else if (roundTicketIds && Array.from(roundTicketIds).length > 0) {
+      // Second priority: Use tickets from state
+      ticketsToUse = Array.from(roundTicketIds);
+      debugLog(`Using ${ticketsToUse.length} tickets from state`);
+    } else {
+      // Last resort: Use fallback tickets
+      ticketsToUse = [1, 2, 3, 4];
+      debugLog(`WARNING: Using ${ticketsToUse.length} FALLBACK tickets - NO ACTUAL BLOCKCHAIN DATA AVAILABLE`);
+    }
     
     // Simulate ticket selection animation
     let counter = 0;
@@ -700,8 +756,20 @@ export const useJackpot = () => {
           try {
             let winnerTicket;
             
-            if (currentRound && currentRound.completed && currentRound.winningTicketId) {
-              debugLog(`Setting winner from contract data: ticket #${currentRound.winningTicketId}, prize: ${weiToEther(currentRound.totalPool)}`);
+            // Try multiple sources for winner data, in order of reliability
+            if (directRoundData && directRoundData[6] && directRoundData[5]) {
+              // 1. Use directly retrieved round data (most reliable)
+              const winningId = Number(directRoundData[5]);
+              debugLog(`Setting winner from direct contract data: ticket #${winningId}`);
+              
+              winnerTicket = {
+                id: winningId,
+                isUser: userTickets.includes(winningId),
+                owner: ticketOwners[winningId] ? shortenAddress(ticketOwners[winningId]) : ''
+              };
+            } else if (currentRound && currentRound.completed && currentRound.winningTicketId) {
+              // 2. Use state data if available
+              debugLog(`Setting winner from state data: ticket #${currentRound.winningTicketId}, prize: ${weiToEther(currentRound.totalPool)}`);
               
               // Create winner ticket object from contract data
               winnerTicket = {
@@ -710,9 +778,10 @@ export const useJackpot = () => {
                 owner: ticketOwners[currentRound.winningTicketId] ? 
                   shortenAddress(ticketOwners[currentRound.winningTicketId]) : ''
               };
-            } else {
-              // If we don't have winner data from contract, pick a random ticket as winner
-              debugLog('No contract winner data available, selecting random winner for UI');
+            } else if (ticketsToUse.length > 0) {
+              // 3. If no winner data available, select from actual tickets (better fallback)
+              debugLog('No contract winner data available, selecting from available tickets');
+              
               const randomWinningIndex = Math.floor(Math.random() * ticketsToUse.length);
               const randomWinningId = ticketsToUse[randomWinningIndex];
               
@@ -722,6 +791,12 @@ export const useJackpot = () => {
                 owner: ticketOwners[randomWinningId] ? 
                   shortenAddress(ticketOwners[randomWinningId]) : ''
               };
+            } else {
+              // 4. Absolute last resort fallback
+              debugLog('CRITICAL: No tickets available, using last resort fallback winner');
+              
+              const fallbackTicket = { id: 1, isUser: false, owner: '' };
+              winnerTicket = fallbackTicket;
             }
             
             setCurrentTicket(winnerTicket);
